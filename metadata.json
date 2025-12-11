@@ -1,0 +1,7 @@
+{
+  "name": "FinanceFlow AI",
+  "description": "Un'app gestionale completa per le finanze personali con tracciamento spese, budget, obiettivi di risparmio e analisi AI alimentata da Gemini.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
