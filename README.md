@@ -4,8 +4,6 @@
 
 Progettata con un'architettura leggera (senza build step complessi) e un'interfaccia "Mobile-First" curata nei minimi dettagli.
 
-![FinanceFlow AI Preview](https://via.placeholder.com/800x400.png?text=FinanceFlow+AI+Preview)
-
 ## ✨ Funzionalità Principali
 
 ### 📊 Gestione Finanziaria Completa
