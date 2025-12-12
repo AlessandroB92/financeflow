@@ -7,9 +7,10 @@ import {
   LayoutDashboard, PlusCircle, BarChart3, Wallet, Settings, 
   TrendingUp, TrendingDown, Receipt,
   Menu, X, Search, Camera, Upload, Lock, Share2, LogOut, Bell,
-  Calendar, Users, Download, FileJson, CheckCircle, AlertCircle, BrainCircuit, Trash2, ArrowUpRight, Database, Pencil, Save, Filter, Globe, Zap, KeyRound, ShieldCheck, ShieldAlert, Percent, UserPlus, UserMinus, ArrowLeft
+  Calendar, Users, Download, FileJson, CheckCircle, AlertCircle, BrainCircuit, Trash2, ArrowUpRight, Database, Pencil, Save, Filter, Globe, Zap, KeyRound, ShieldCheck, ShieldAlert, Percent, UserPlus, UserMinus, ArrowLeft,
+  MessageCircle, Send, Bot, Minimize2, Sparkles, Repeat, Clock
 } from 'lucide-react';
-import { Transaction, TransactionType, Category, Bill, EXPENSE_CATEGORIES, INCOME_CATEGORIES, MarketAnalysis } from './types.ts';
+import { Transaction, TransactionType, Category, Bill, EXPENSE_CATEGORIES, INCOME_CATEGORIES, MarketAnalysis, RecurrenceFrequency } from './types.ts';
 import * as GeminiService from './services/geminiService.ts';
 import { api, supabase } from './services/supabase.ts'; // Import DB
 import gsap from 'gsap';
@@ -32,6 +33,15 @@ const getDaysUntil = (dateStr: string) => {
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 };
 
+// Calculate next occurrence based on frequency
+const calculateNextDate = (currentDate: string, frequency: RecurrenceFrequency): string => {
+    const d = new Date(currentDate);
+    if (frequency === 'WEEKLY') d.setDate(d.getDate() + 7);
+    if (frequency === 'MONTHLY') d.setMonth(d.getMonth() + 1);
+    if (frequency === 'YEARLY') d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString();
+};
+
 // --- Animations Helper ---
 const PageTransition = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => {
   const compRef = useRef<HTMLDivElement>(null);
@@ -50,6 +60,163 @@ const PageTransition = ({ children, className = "" }: { children: React.ReactNod
 };
 
 // --- Sub-Components ---
+
+// 0. Chat Assistant Widget
+const ChatWidget = ({ transactions, bills }: { transactions: Transaction[], bills: Bill[] }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<{role: 'user' | 'model', text: string}[]>([
+    { role: 'model', text: 'Ciao! Sono Fin, il tuo assistente finanziario. Come posso aiutarti oggi?' }
+  ]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [chatSession, setChatSession] = useState<any>(null);
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Initialize Chat Session with context
+  useEffect(() => {
+    if (isOpen && !chatSession) {
+      const session = GeminiService.createFinancialChat(transactions, bills);
+      if (session) setChatSession(session);
+    }
+  }, [isOpen, transactions, bills]);
+
+  // Auto-scroll
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Animation open/close
+  useLayoutEffect(() => {
+    if (isOpen) {
+      gsap.fromTo(chatContainerRef.current, 
+        { opacity: 0, y: 20, scale: 0.9 }, 
+        { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: "back.out(1.2)" }
+      );
+    }
+  }, [isOpen]);
+
+  const handleSend = async () => {
+    if (!input.trim() || !chatSession) return;
+    
+    const userMsg = input;
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setInput('');
+    setIsLoading(true);
+
+    const responseText = await GeminiService.sendMessageToChat(chatSession, userMsg);
+    
+    setMessages(prev => [...prev, { role: 'model', text: responseText }]);
+    setIsLoading(false);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+      if(e.key === 'Enter') handleSend();
+  }
+
+  // Formatting helper for bold text from markdown
+  const formatMessage = (text: string) => {
+    // Simple bold parser
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
+
+  return (
+    <>
+      {/* Floating Button */}
+      <div className="fixed bottom-24 right-4 md:bottom-8 md:right-8 z-50">
+        <button 
+          onClick={() => setIsOpen(!isOpen)}
+          className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 hover:scale-110 ${isOpen ? 'bg-slate-200 text-slate-800 rotate-90' : 'bg-indigo-600 text-white'}`}
+        >
+          {isOpen ? <X className="w-6 h-6" /> : <MessageCircle className="w-7 h-7" />}
+        </button>
+      </div>
+
+      {/* Chat Window */}
+      {isOpen && (
+        <div ref={chatContainerRef} className="fixed bottom-40 right-4 md:bottom-24 md:right-8 w-[90vw] md:w-[380px] h-[500px] glass-panel bg-white/95 dark:bg-slate-900/95 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 z-40 flex flex-col overflow-hidden">
+           {/* Header */}
+           <div className="p-4 bg-indigo-600 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2">
+                 <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+                    <Sparkles className="w-5 h-5 text-yellow-300" />
+                 </div>
+                 <div>
+                    <h3 className="font-bold text-sm">Fin Assistant</h3>
+                    <p className="text-[10px] text-indigo-200 flex items-center gap-1">
+                       <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span> Online
+                    </p>
+                 </div>
+              </div>
+              <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-white/10 rounded-full transition-colors">
+                 <Minimize2 className="w-5 h-5" />
+              </button>
+           </div>
+
+           {/* Messages */}
+           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 dark:bg-slate-900/50">
+              {messages.map((m, i) => (
+                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed ${
+                      m.role === 'user' 
+                        ? 'bg-indigo-600 text-white rounded-br-none shadow-md' 
+                        : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-none shadow-sm border border-slate-100 dark:border-slate-700'
+                    }`}>
+                       {formatMessage(m.text)}
+                    </div>
+                 </div>
+              ))}
+              {isLoading && (
+                 <div className="flex justify-start">
+                    <div className="bg-white dark:bg-slate-800 p-3 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 dark:border-slate-700">
+                       <div className="flex gap-1">
+                          <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></span>
+                          <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce delay-100"></span>
+                          <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce delay-200"></span>
+                       </div>
+                    </div>
+                 </div>
+              )}
+              <div ref={messagesEndRef} />
+           </div>
+
+           {/* Input */}
+           <div className="p-3 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700">
+             {!GeminiService.hasApiKey() ? (
+                <div className="text-center text-xs text-red-500 py-2">API Key mancante in index.html</div>
+             ) : (
+                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-full pr-2 focus-within:ring-2 ring-indigo-500/50 transition-all">
+                  <input 
+                    className="flex-1 bg-transparent border-none focus:outline-none px-3 py-2 text-sm dark:text-white placeholder-slate-400"
+                    placeholder="Chiedi a Fin..."
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyPress}
+                    disabled={isLoading}
+                  />
+                  <button 
+                    onClick={handleSend}
+                    disabled={!input.trim() || isLoading}
+                    className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-90"
+                  >
+                    <Send className="w-4 h-4 ml-0.5" />
+                  </button>
+                </div>
+             )}
+           </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 
 // 1. PIN Lock Screen & Setup
 const PinPad = ({ title, subTitle, onComplete, onCancel, variant = 'fullscreen' }: { title: string, subTitle: string, onComplete: (pin: string) => void, onCancel?: () => void, variant?: 'fullscreen' | 'inline' }) => {
@@ -716,7 +883,8 @@ const TransactionForm = ({ onSave, onCancel }: { onSave: (t: Partial<Transaction
     category: Category.FOOD,
     description: '',
     subcategory: '',
-    isRecurring: false
+    isRecurring: false,
+    recurrenceFrequency: 'MONTHLY'
   });
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -760,7 +928,13 @@ const TransactionForm = ({ onSave, onCancel }: { onSave: (t: Partial<Transaction
 
   const handleSave = async () => {
     setLoading(true);
-    await onSave(formData);
+    // If recurring, calculate the NEXT occurrence date right away so we know when to trigger it next time
+    let nextDate = undefined;
+    if (formData.isRecurring && formData.recurrenceFrequency && formData.date) {
+        nextDate = calculateNextDate(formData.date, formData.recurrenceFrequency);
+    }
+    
+    await onSave({ ...formData, nextRecurringDate: nextDate });
     setLoading(false);
   }
 
@@ -857,15 +1031,30 @@ const TransactionForm = ({ onSave, onCancel }: { onSave: (t: Partial<Transaction
                 className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 dark:text-white rounded-2xl font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
-            <div className="flex items-center pt-8 px-2">
-                <input 
-                  type="checkbox" 
-                  id="recurring" 
-                  checked={formData.isRecurring}
-                  onChange={e => setFormData({...formData, isRecurring: e.target.checked})}
-                  className="w-6 h-6 accent-emerald-500 rounded-md cursor-pointer"
-                />
-                <label htmlFor="recurring" className="ml-3 text-sm text-slate-600 dark:text-slate-300 font-medium cursor-pointer select-none">Ricorrente</label>
+            <div className="flex flex-col justify-center gap-2 pt-2">
+                <div className="flex items-center px-2">
+                    <input 
+                    type="checkbox" 
+                    id="recurring" 
+                    checked={formData.isRecurring}
+                    onChange={e => setFormData({...formData, isRecurring: e.target.checked})}
+                    className="w-6 h-6 accent-emerald-500 rounded-md cursor-pointer"
+                    />
+                    <label htmlFor="recurring" className="ml-3 text-sm text-slate-600 dark:text-slate-300 font-medium cursor-pointer select-none">Ricorrente</label>
+                </div>
+                {formData.isRecurring && (
+                    <div className="animate-in slide-in-from-top-2 fade-in pl-2">
+                        <select 
+                            value={formData.recurrenceFrequency}
+                            onChange={(e) => setFormData({...formData, recurrenceFrequency: e.target.value as RecurrenceFrequency})}
+                            className="w-full p-2 bg-slate-100 dark:bg-slate-900 dark:text-white rounded-lg text-sm border-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                            <option value="WEEKLY">Ogni Settimana</option>
+                            <option value="MONTHLY">Ogni Mese</option>
+                            <option value="YEARLY">Ogni Anno</option>
+                        </select>
+                    </div>
+                )}
             </div>
         </div>
 
@@ -1028,19 +1217,25 @@ const AnalyticsView = ({ transactions }: { transactions: Transaction[] }) => {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-3 gap-3">
-                 <div className="bg-emerald-50 dark:bg-emerald-900/20 p-3 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
-                     <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider mb-1">Entrate</p>
-                     <p className="font-bold text-emerald-700 dark:text-emerald-300 text-sm md:text-base">{formatCurrency(totalIncome)}</p>
-                 </div>
-                 <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-2xl border border-red-100 dark:border-red-800/30">
-                     <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider mb-1">Uscite</p>
-                     <p className="font-bold text-red-700 dark:text-red-300 text-sm md:text-base">{formatCurrency(totalExpense)}</p>
-                 </div>
-                 <div className={`p-3 rounded-2xl border ${net >= 0 ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800/30' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800/30'}`}>
-                     <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${net >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-orange-600 dark:text-orange-400'}`}>Netto</p>
-                     <p className={`font-bold text-sm md:text-base ${net >= 0 ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>{formatCurrency(net)}</p>
-                 </div>
+            <div className={`grid gap-3 ${typeFilter === 'ALL' ? 'grid-cols-3' : 'grid-cols-1'}`}>
+                 {(typeFilter === 'ALL' || typeFilter === 'INCOME') && (
+                     <div className="bg-emerald-50 dark:bg-emerald-900/20 p-3 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
+                         <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider mb-1">Entrate</p>
+                         <p className="font-bold text-emerald-700 dark:text-emerald-300 text-sm md:text-base">{formatCurrency(totalIncome)}</p>
+                     </div>
+                 )}
+                 {(typeFilter === 'ALL' || typeFilter === 'EXPENSE') && (
+                     <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-2xl border border-red-100 dark:border-red-800/30">
+                         <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider mb-1">Uscite</p>
+                         <p className="font-bold text-red-700 dark:text-red-300 text-sm md:text-base">{formatCurrency(totalExpense)}</p>
+                     </div>
+                 )}
+                 {typeFilter === 'ALL' && (
+                     <div className={`p-3 rounded-2xl border ${net >= 0 ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800/30' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800/30'}`}>
+                         <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${net >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-orange-600 dark:text-orange-400'}`}>Netto</p>
+                         <p className={`font-bold text-sm md:text-base ${net >= 0 ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>{formatCurrency(net)}</p>
+                     </div>
+                 )}
             </div>
 
             {/* Chart */}
@@ -1102,6 +1297,7 @@ const AnalyticsView = ({ transactions }: { transactions: Transaction[] }) => {
                     <div>
                         <p className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
                         {t.description}
+                         {t.isRecurring && <Repeat className="w-3 h-3 text-slate-400" />}
                         </p>
                         <div className="flex items-center gap-2 text-[10px] font-medium text-slate-500">
                         <span>{formatDate(t.date)}</span>
@@ -1155,6 +1351,61 @@ const App: React.FC = () => {
                 setPin(dbPin);
                 setIsLocked(true);
             }
+
+            // --- RECURRING TRANSACTIONS CHECK LOGIC ---
+            // Filter transactions that are recurring and due
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+
+            // 1. Find parents that are recurring and have a nextRecurringDate <= today
+            const recurringDue = txs.filter(t => 
+                t.isRecurring && 
+                t.nextRecurringDate && 
+                new Date(t.nextRecurringDate) <= today
+            );
+
+            if (recurringDue.length > 0) {
+                const newTransactions: Transaction[] = [];
+                
+                for (const parent of recurringDue) {
+                     // Create new transaction based on parent
+                     const newDate = parent.nextRecurringDate!;
+                     
+                     // Avoid duplicates: Simple check if we already have a transaction with same description and date
+                     const exists = txs.find(t => t.description === parent.description && t.date.startsWith(newDate.split('T')[0]));
+                     if(exists) continue; // Skip if somehow already exists
+
+                     const newTx: Transaction = {
+                         id: '', // Will be generated
+                         amount: parent.amount,
+                         type: parent.type,
+                         category: parent.category,
+                         subcategory: parent.subcategory,
+                         description: parent.description,
+                         date: newDate,
+                         isRecurring: false, // Child is not the recurring template
+                     };
+
+                     const saved = await api.addTransaction(newTx);
+                     if (saved) newTransactions.push(saved);
+
+                     // Update Parent's Next Date
+                     if (parent.recurrenceFrequency) {
+                         const nextNextDate = calculateNextDate(newDate, parent.recurrenceFrequency);
+                         await api.updateTransactionNextDate(parent.id, nextNextDate);
+                     }
+                }
+
+                if (newTransactions.length > 0) {
+                    // Refresh data
+                     const updatedTxs = await api.getTransactions();
+                     setTransactions(updatedTxs);
+                     // Optional: notify user
+                     console.log(`Generated ${newTransactions.length} recurring transactions`);
+                }
+            }
+            // ------------------------------------------
+
         } catch (e) {
             console.error("DB Error", e);
         } finally {
@@ -1192,7 +1443,9 @@ const App: React.FC = () => {
       date: t.date || new Date().toISOString(),
       description: t.description || 'Nuova transazione',
       receiptImage: t.receiptImage,
-      isRecurring: t.isRecurring
+      isRecurring: t.isRecurring,
+      recurrenceFrequency: t.recurrenceFrequency,
+      nextRecurringDate: t.nextRecurringDate
     };
     
     // Optimistic Update
@@ -1401,6 +1654,11 @@ const App: React.FC = () => {
       <div className="max-w-4xl mx-auto p-4 md:p-8 pt-6">
         {renderView()}
       </div>
+
+      {/* Floating Chat Assistant */}
+      {!isLocked && isDbConfigured && (
+        <ChatWidget transactions={transactions} bills={bills} />
+      )}
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-700 h-20 flex justify-evenly items-center z-40 md:w-auto md:max-w-xl md:left-1/2 md:-translate-x-1/2 md:bottom-6 md:rounded-full md:shadow-2xl md:border md:px-6">
         <NavButton id="dashboard" icon={LayoutDashboard} label="Home" />

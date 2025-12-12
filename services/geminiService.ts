@@ -1,5 +1,5 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { Transaction, EXPENSE_CATEGORIES, MarketAnalysis } from "../types.ts";
+import { GoogleGenAI, Type, Chat } from "@google/genai";
+import { Transaction, EXPENSE_CATEGORIES, MarketAnalysis, Bill } from "../types.ts";
 
 // Verifica se la chiave API è presente
 export const hasApiKey = (): boolean => {
@@ -25,6 +25,67 @@ const getAI = () => {
   }
 
   return new GoogleGenAI({ apiKey });
+};
+
+/**
+ * Creates a chat session aware of user's financial data
+ */
+export const createFinancialChat = (transactions: Transaction[], bills: Bill[]) => {
+  if (!hasApiKey()) return null;
+
+  const ai = getAI();
+  
+  // Prepare context data (limit to recent items to save context window if needed, though 2.5 Flash has huge context)
+  const contextData = {
+    transactions: transactions.slice(0, 100).map(t => ({
+      date: t.date,
+      amount: t.amount,
+      type: t.type,
+      category: t.category,
+      description: t.description
+    })),
+    upcoming_bills: bills.filter(b => !b.isPaid).map(b => ({
+      name: b.name,
+      amount: b.amount,
+      due: b.dueDate
+    }))
+  };
+
+  const systemInstruction = `
+    Sei "Fin", l'assistente virtuale intelligente dell'app FinanceFlow AI.
+    Il tuo obiettivo è aiutare l'utente a capire le sue finanze, rispondere a domande sulle sue spese e dare consigli.
+    
+    Ecco i dati finanziari attuali dell'utente in formato JSON:
+    ${JSON.stringify(contextData)}
+
+    REGOLE:
+    1. Rispondi in modo conciso, amichevole e professionale.
+    2. Usa la formattazione Markdown (grassetto per i numeri, elenchi puntati) per rendere la risposta leggibile.
+    3. Se l'utente chiede qualcosa che non puoi calcolare dai dati, dillo chiaramente o offri consigli generali.
+    4. La valuta è Euro (€).
+    5. Parla sempre in Italiano.
+    6. Se ti chiedono un riassunto, analizza le categorie principali di spesa.
+  `;
+
+  return ai.chats.create({
+    model: "gemini-2.5-flash",
+    config: {
+      systemInstruction: systemInstruction,
+    }
+  });
+};
+
+/**
+ * Sends a message to the chat session
+ */
+export const sendMessageToChat = async (chat: Chat, message: string): Promise<string> => {
+  try {
+    const response = await chat.sendMessage({ message });
+    return response.text || "Scusa, non ho capito.";
+  } catch (e) {
+    console.error("Chat error", e);
+    return "Si è verificato un errore di connessione con l'AI.";
+  }
 };
 
 /**

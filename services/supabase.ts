@@ -52,7 +52,9 @@ export const api = {
     return data.map((t: any) => ({
       ...t,
       receiptImage: t.receipt_image,
-      isRecurring: t.is_recurring
+      isRecurring: t.is_recurring,
+      recurrenceFrequency: t.recurrence_frequency,
+      nextRecurringDate: t.next_recurring_date
     }));
   },
 
@@ -68,7 +70,9 @@ export const api = {
       date: toInsert.date,
       description: toInsert.description,
       receipt_image: toInsert.receiptImage,
-      is_recurring: toInsert.isRecurring
+      is_recurring: toInsert.isRecurring,
+      recurrence_frequency: toInsert.recurrenceFrequency,
+      next_recurring_date: toInsert.nextRecurringDate
     };
 
     const { data, error } = await supabase.from('transactions').insert(dbPayload).select().single();
@@ -77,8 +81,15 @@ export const api = {
     return {
       ...data,
       receiptImage: data.receipt_image,
-      isRecurring: data.is_recurring
+      isRecurring: data.is_recurring,
+      recurrenceFrequency: data.recurrence_frequency,
+      nextRecurringDate: data.next_recurring_date
     };
+  },
+
+  updateTransactionNextDate: async (id: string, nextDate: string): Promise<void> => {
+    if(!supabase) return;
+    await supabase.from('transactions').update({ next_recurring_date: nextDate }).eq('id', id);
   },
 
   // BILLS

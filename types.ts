@@ -40,6 +40,8 @@ export const INCOME_CATEGORIES = [
   Category.OTHER
 ];
 
+export type RecurrenceFrequency = 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
 export interface Transaction {
   id: string;
   amount: number;
@@ -50,6 +52,8 @@ export interface Transaction {
   description: string;
   receiptImage?: string; // Base64
   isRecurring?: boolean;
+  recurrenceFrequency?: RecurrenceFrequency;
+  nextRecurringDate?: string; // ISO String per la prossima generazione
 }
 
 export interface Bill {
