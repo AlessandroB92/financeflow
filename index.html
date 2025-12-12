@@ -34,23 +34,18 @@
     </style>
     <script>
       // --- CONFIGURAZIONE AMBIENTE ---
-      // Questo script simula le variabili d'ambiente nel browser.
-      // INSERISCI QUI SOTTO LA TUA API KEY DI GOOGLE GEMINI
+      // Impostiamo la chiave in più punti per garantire che venga letta correttamente
+      const GOOGLE_API_KEY = 'AIzaSyDm79c9lRlsox3P2c9fZLFl7kkL-tvLv1I';
+      
+      window.GEMINI_API_KEY = GOOGLE_API_KEY;
+      
       window.process = {
         env: {
-          // Ottieni una chiave qui: https://aistudio.google.com/app/apikey
-          API_KEY: '' 
+          API_KEY: GOOGLE_API_KEY
         }
       };
     </script>
   <script type="importmap">
-      // --- CONFIGURAZIONE AMBIENTE ---
-      window.process = {
-        env: {
-          // Ottieni una chiave qui: https://aistudio.google.com/app/apikey
-          API_KEY: 'AIzaSyDm79c9lRlsox3P2c9fZLFl7kkL-tvLv1I' 
-        }
-      };
 {
   "imports": {
     "lucide-react": "https://esm.sh/lucide-react@^0.560.0",

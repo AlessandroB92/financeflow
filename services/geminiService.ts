@@ -1,30 +1,41 @@
 import { GoogleGenAI, Type, Chat } from "@google/genai";
 import { Transaction, EXPENSE_CATEGORIES, MarketAnalysis, Bill } from "../types.ts";
 
+// Helper sicuro per leggere le variabili d'ambiente nel browser
+const getEnvVar = (key: string): string | undefined => {
+  try {
+    // 0. Fallback diretto per Gemini (per evitare problemi con oggetti process non standard)
+    if (key === 'API_KEY' && (window as any).GEMINI_API_KEY) {
+      return (window as any).GEMINI_API_KEY.trim();
+    }
+
+    // 1. Prova window.process (definito in index.html)
+    if (typeof window !== "undefined" && (window as any).process?.env?.[key]) {
+      return (window as any).process.env[key].trim();
+    }
+    // 2. Prova process globale (se disponibile)
+    if (typeof process !== "undefined" && process.env?.[key]) {
+      return process.env[key].trim();
+    }
+  } catch (e) {
+    return undefined;
+  }
+  return undefined;
+};
+
 // Verifica se la chiave API è presente
 export const hasApiKey = (): boolean => {
-  try {
-    return typeof process !== "undefined" && !!process.env?.API_KEY;
-  } catch {
-    return false;
-  }
+  return !!getEnvVar('API_KEY');
 };
 
 const getAI = () => {
-  let apiKey = "";
-  try {
-    if (typeof process !== "undefined" && process.env && process.env.API_KEY) {
-      apiKey = process.env.API_KEY;
-    }
-  } catch (e) {
-    console.error("Errore lettura env:", e);
-  }
+  const apiKey = getEnvVar('API_KEY');
 
   if (!apiKey) {
     console.warn("API Key di Gemini mancante. Configurala in index.html");
   }
 
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: apiKey || '' });
 };
 
 /**

@@ -22,9 +22,10 @@ export const api = {
       .from('settings')
       .select('value')
       .eq('key', 'app_pin')
-      .single();
+      .maybeSingle(); // Usa maybeSingle per evitare errori 406 se non esiste
     
-    if (error || !data) return undefined;
+    if (error) { console.error(error); return undefined; }
+    if (!data) return undefined;
     return data.value;
   },
 
