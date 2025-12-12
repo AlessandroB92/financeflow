@@ -1,12 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
-import { Transaction, Bill } from '../types';
+import { Transaction, Bill } from '../types.ts';
 
-// NOTE: Ensure your .env or script injection provides these values or replace strictly for local dev.
-// In the current setup, we assume they might be provided via an injected global or env.
-// For the user, we default to null to prevent crash if not set.
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ofznsslbukmeacrmjwgx.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mem5zc2xidWttZWFjcm1qd2d4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NDc4OTMsImV4cCI6MjA4MTAyMzg5M30.JxSy7yUSvnxjEmx7ABDL7UaH-ztk2JoC0y0jc7u-EeU';
+// ⚠️ SOSTITUISCI CON I TUOI DATI DI SUPABASE ⚠️
+const SUPABASE_URL = 'https://ofznsslbukmeacrmjwgx.supabase.co'; // es: https://xyz.supabase.co
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mem5zc2xidWttZWFjcm1qd2d4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NDc4OTMsImV4cCI6MjA4MTAyMzg5M30.JxSy7yUSvnxjEmx7ABDL7UaH-ztk2JoC0y0jc7u-EeU'; // es: eyJxh...
 
+// Fallback per evitare crash se l'utente non ha configurato
 const isConfigured = SUPABASE_URL.includes('http');
 
 export const supabase = isConfigured 

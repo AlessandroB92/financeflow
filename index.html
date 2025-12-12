@@ -32,6 +32,17 @@
         border: 1px solid rgba(255, 255, 255, 0.1);
       }
     </style>
+    <script>
+      // --- CONFIGURAZIONE AMBIENTE ---
+      // Questo script simula le variabili d'ambiente nel browser.
+      // INSERISCI QUI SOTTO LA TUA API KEY DI GOOGLE GEMINI
+      window.process = {
+        env: {
+          // Ottieni una chiave qui: https://aistudio.google.com/app/apikey
+          API_KEY: '' 
+        }
+      };
+    </script>
   <script type="importmap">
 {
   "imports": {
@@ -46,10 +57,12 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body>
     <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
+    <!-- Babel per la compilazione JSX/TS in-browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Script di avvio applicazione -->
+    <script type="text/babel" data-type="module" src="./index.tsx"></script>
+  </body>
 </html>

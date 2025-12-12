@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Transaction, EXPENSE_CATEGORIES, MarketAnalysis } from "../types";
+import { Transaction, EXPENSE_CATEGORIES, MarketAnalysis } from "../types.ts";
 
 // Verifica se la chiave API è presente
 export const hasApiKey = (): boolean => {

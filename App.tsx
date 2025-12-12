@@ -9,9 +9,9 @@ import {
   Menu, X, Search, Camera, Upload, Lock, Share2, LogOut, Bell,
   Calendar, Users, Download, FileJson, CheckCircle, AlertCircle, BrainCircuit, Trash2, ArrowUpRight, Database, Pencil, Save, Filter, Globe, Zap, KeyRound, ShieldCheck, ShieldAlert, Percent, UserPlus, UserMinus, ArrowLeft
 } from 'lucide-react';
-import { Transaction, TransactionType, Category, Bill, EXPENSE_CATEGORIES, INCOME_CATEGORIES, MarketAnalysis } from './types';
-import * as GeminiService from './services/geminiService';
-import { api, supabase } from './services/supabase'; // Import DB
+import { Transaction, TransactionType, Category, Bill, EXPENSE_CATEGORIES, INCOME_CATEGORIES, MarketAnalysis } from './types.ts';
+import * as GeminiService from './services/geminiService.ts';
+import { api, supabase } from './services/supabase.ts'; // Import DB
 import gsap from 'gsap';
 
 // --- Constants & Helpers ---
