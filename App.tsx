@@ -8,7 +8,7 @@ import {
   TrendingUp, TrendingDown, Receipt,
   Menu, X, Search, Camera, Upload, Lock, Share2, LogOut, Bell,
   Calendar, Users, Download, FileJson, CheckCircle, AlertCircle, BrainCircuit, Trash2, ArrowUpRight, Database, Pencil, Save, Filter, Globe, Zap, KeyRound, ShieldCheck, ShieldAlert, Percent, UserPlus, UserMinus, ArrowLeft,
-  MessageCircle, Send, Bot, Minimize2, Sparkles, Repeat, Clock
+  MessageCircle, Send, Bot, Minimize2, Sparkles, Repeat, Clock, Ban, ArrowDownLeft
 } from 'lucide-react';
 import { Transaction, TransactionType, Category, Bill, EXPENSE_CATEGORIES, INCOME_CATEGORIES, MarketAnalysis, RecurrenceFrequency } from './types.ts';
 import * as GeminiService from './services/geminiService.ts';
@@ -41,6 +41,15 @@ const calculateNextDate = (currentDate: string, frequency: RecurrenceFrequency):
     if (frequency === 'YEARLY') d.setFullYear(d.getFullYear() + 1);
     return d.toISOString();
 };
+
+const getFrequencyLabel = (freq?: RecurrenceFrequency) => {
+    switch (freq) {
+        case 'WEEKLY': return 'Settimanale';
+        case 'MONTHLY': return 'Mensile';
+        case 'YEARLY': return 'Annuale';
+        default: return 'Periodico';
+    }
+}
 
 // --- Animations Helper ---
 const PageTransition = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => {
@@ -530,193 +539,115 @@ const BillsView = ({ bills, onAddBill, onPayBill, onDeleteBill }: { bills: Bill[
   );
 }
 
-// 4. Split View (Updated for Percentage)
-const SplitView = () => {
-  const [mode, setMode] = useState<'EQUAL' | 'PERCENTAGE'>('EQUAL');
-  const [amount, setAmount] = useState<number>(0);
-  
-  // Equal Mode State
-  const [people, setPeople] = useState<number>(2);
+// 4. Recurring View
+const RecurringView = ({ transactions, onStopRecurrence }: { transactions: Transaction[], onStopRecurrence: (id: string) => void }) => {
+    const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
 
-  // Percentage Mode State
-  const [participants, setParticipants] = useState<{id: number, name: string, percentage: number}[]>([
-      { id: 1, name: 'Persona 1', percentage: 50 },
-      { id: 2, name: 'Persona 2', percentage: 50 }
-  ]);
+    // Filter active recurring transactions (Templates) and apply type filter
+    const recurringList = useMemo(() => {
+        return transactions.filter(t => {
+            if (!t.isRecurring) return false;
+            if (filter === 'ALL') return true;
+            return t.type === filter;
+        });
+    }, [transactions, filter]);
 
-  const resultRef = useRef(null);
-  const containerRef = useRef(null);
-  
-  // Animations
-  useEffect(() => {
-    if(amount > 0) {
-      gsap.fromTo(resultRef.current, { scale: 0.95 }, { scale: 1, duration: 0.3, ease: "back.out(2)" });
-    }
-  }, [amount, people, participants]);
+    useEffect(() => {
+        if(recurringList.length > 0) {
+            gsap.from(".recurring-item", { y: 20, opacity: 0, stagger: 0.1, duration: 0.4 });
+        }
+    }, [recurringList, filter]);
 
-  useLayoutEffect(() => {
-      // Animate transition between modes
-      const ctx = gsap.context(() => {
-          gsap.from(containerRef.current, { opacity: 0, y: 10, duration: 0.4 });
-      });
-      return () => ctx.revert();
-  }, [mode]);
-
-  // Handlers for Percentage Mode
-  const handleAddParticipant = () => {
-      const newId = participants.length > 0 ? Math.max(...participants.map(p => p.id)) + 1 : 1;
-      setParticipants([...participants, { id: newId, name: `Persona ${newId}`, percentage: 0 }]);
-  };
-
-  const handleRemoveParticipant = (id: number) => {
-      if (participants.length > 1) {
-          setParticipants(participants.filter(p => p.id !== id));
-      }
-  };
-
-  const handlePercentageChange = (id: number, val: number) => {
-      setParticipants(participants.map(p => p.id === id ? { ...p, percentage: val } : p));
-  };
-
-  const totalPercentage = participants.reduce((acc, p) => acc + p.percentage, 0);
-  const isValidTotal = totalPercentage === 100;
-
-  return (
-    <PageTransition className="pb-24 space-y-6">
-       <div className="flex justify-between items-center px-2">
-            <h2 className="text-2xl font-bold dark:text-white">Divisione Spese</h2>
-            <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-1">
-                <button 
-                    onClick={() => setMode('EQUAL')}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${mode === 'EQUAL' ? 'bg-white dark:bg-slate-600 shadow text-slate-900 dark:text-white' : 'text-slate-400'}`}
-                >
-                    Equa
-                </button>
-                <button 
-                    onClick={() => setMode('PERCENTAGE')}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${mode === 'PERCENTAGE' ? 'bg-white dark:bg-slate-600 shadow text-slate-900 dark:text-white' : 'text-slate-400'}`}
-                >
-                    % Custom
-                </button>
-            </div>
-       </div>
-       
-       <div ref={containerRef} className="glass-panel bg-white dark:bg-slate-800 p-6 md:p-8 rounded-3xl shadow-xl space-y-8 relative overflow-hidden">
-          {/* Decorative Blobs */}
-          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-3xl -ml-10 -mb-10 pointer-events-none"></div>
-
-          {/* Amount Input (Common) */}
-          <div className="relative z-10">
-            <label className="text-slate-500 font-medium text-xs mb-2 block uppercase tracking-wider">Importo Totale</label>
-            <div className="flex items-center gap-2">
-              <span className="text-3xl font-bold text-emerald-500">€</span>
-              <input 
-                type="number" 
-                value={amount || ''} 
-                onChange={e => setAmount(parseFloat(e.target.value))}
-                className="w-full text-4xl font-bold bg-transparent border-b-2 border-slate-100 dark:border-slate-700 focus:outline-none focus:border-emerald-500 dark:text-white transition-colors py-2 placeholder-slate-200"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-
-          {mode === 'EQUAL' ? (
-              /* EQUAL MODE */
-              <div className="relative z-10 space-y-8 animate-in fade-in duration-300">
-                <div>
-                    <div className="flex justify-between items-center mb-4">
-                    <label className="text-slate-500 font-medium text-xs uppercase tracking-wider">Persone</label>
-                    <span className="text-2xl font-bold dark:text-white bg-slate-100 dark:bg-slate-700 w-10 h-10 flex items-center justify-center rounded-xl">{people}</span>
-                    </div>
-                    
-                    <input 
-                    type="range" 
-                    min="2" 
-                    max="10" 
-                    value={people} 
-                    onChange={e => setPeople(parseInt(e.target.value))}
-                    className="w-full accent-emerald-500 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="flex justify-between mt-3 px-1">
-                        {[2, 10].map(n => (
-                        <span key={n} className="text-xs text-slate-400 font-medium">{n}</span>
-                        ))}
+    return (
+        <PageTransition className="pb-24 space-y-6">
+            <div className="flex flex-col gap-4 px-2">
+                <div className="flex justify-between items-center">
+                    <h2 className="text-2xl font-bold dark:text-white">Operazioni Ricorrenti</h2>
+                    <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                        <Repeat className="w-6 h-6" />
                     </div>
                 </div>
 
-                <div ref={resultRef} className="bg-emerald-50 dark:bg-slate-700/50 border border-emerald-100 dark:border-slate-600 p-6 rounded-2xl flex flex-col items-center shadow-inner relative z-10">
-                    <span className="text-slate-500 font-medium text-sm uppercase tracking-wider mb-2">A testa</span>
-                    <span className="text-5xl font-extrabold text-slate-800 dark:text-white tracking-tight">
-                    {formatCurrency(amount > 0 ? amount / people : 0)}
-                    </span>
+                <div className="flex p-1 bg-slate-100 dark:bg-slate-900 rounded-xl">
+                    {(['ALL', 'INCOME', 'EXPENSE'] as const).map(t => (
+                        <button
+                            key={t}
+                            onClick={() => setFilter(t)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${filter === t ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-400'}`}
+                        >
+                            {t === 'ALL' ? 'Tutte' : t === 'INCOME' ? 'Entrate' : 'Uscite'}
+                        </button>
+                    ))}
                 </div>
-              </div>
-          ) : (
-              /* PERCENTAGE MODE */
-              <div className="relative z-10 space-y-6 animate-in fade-in duration-300">
-                  <div className="flex justify-between items-center mb-2">
-                       <label className="text-slate-500 font-medium text-xs uppercase tracking-wider">Partecipanti</label>
-                       <button onClick={handleAddParticipant} className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-xs font-bold bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1.5 rounded-full hover:bg-emerald-100 transition-colors">
-                           <UserPlus className="w-3 h-3" /> Aggiungi
-                       </button>
-                  </div>
+            </div>
 
-                  <div className="space-y-4 max-h-[300px] overflow-y-auto no-scrollbar pr-1">
-                      {participants.map((p) => (
-                          <div key={p.id} className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
-                              <div className="flex justify-between items-center mb-3">
-                                  <input 
-                                    value={p.name}
-                                    onChange={(e) => setParticipants(participants.map(par => par.id === p.id ? {...par, name: e.target.value} : par))}
-                                    className="bg-transparent font-bold text-slate-700 dark:text-white border-b border-transparent focus:border-slate-300 outline-none w-1/2"
-                                  />
-                                  <div className="flex items-center gap-2">
-                                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                                          {formatCurrency((amount * p.percentage) / 100)}
-                                      </span>
-                                      {participants.length > 1 && (
-                                        <button onClick={() => handleRemoveParticipant(p.id)} className="text-slate-400 hover:text-red-500 p-1">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      )}
-                                  </div>
-                              </div>
-                              <div className="flex items-center gap-4">
-                                  <input 
-                                    type="range" 
-                                    min="0" 
-                                    max="100" 
-                                    value={p.percentage} 
-                                    onChange={(e) => handlePercentageChange(p.id, parseInt(e.target.value))}
-                                    className="flex-1 accent-indigo-500 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer"
-                                  />
-                                  <span className="w-12 text-right text-xs font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-600">
-                                      {p.percentage}%
-                                  </span>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
+            <div className="space-y-4">
+                {recurringList.length === 0 ? (
+                    <div className="glass-panel bg-white dark:bg-slate-800 p-8 rounded-3xl flex flex-col items-center justify-center text-center space-y-4 shadow-lg border border-slate-100 dark:border-slate-700 min-h-[300px]">
+                        <div className="w-20 h-20 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center">
+                            <Repeat className="w-10 h-10 text-slate-400" />
+                        </div>
+                        <h3 className="text-lg font-bold dark:text-white">
+                            {filter === 'ALL' ? 'Nessuna operazione ricorrente' : filter === 'INCOME' ? 'Nessuna entrata ricorrente' : 'Nessuna uscita ricorrente'}
+                        </h3>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-xs text-sm">
+                            Non hai ancora impostato operazioni automatiche per questa categoria.
+                        </p>
+                    </div>
+                ) : (
+                    recurringList.map(t => {
+                        const isIncome = t.type === TransactionType.INCOME;
+                        const themeColor = isIncome ? 'emerald' : 'red';
+                        const bgColor = isIncome ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-red-50 dark:bg-red-900/20';
+                        const textColor = isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
+                        const gradientFrom = isIncome ? 'from-emerald-500/10' : 'from-red-500/10';
+                        const gradientTo = isIncome ? 'to-teal-500/10' : 'to-orange-500/10';
 
-                  {/* Summary Footer */}
-                  <div className={`p-4 rounded-xl border flex justify-between items-center transition-colors duration-300 ${isValidTotal ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-red-50 border-red-100 dark:bg-red-900/20 dark:border-red-800'}`}>
-                      <div className="flex items-center gap-2">
-                          {isValidTotal ? <CheckCircle className="w-5 h-5 text-emerald-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
-                          <span className={`text-sm font-bold ${isValidTotal ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
-                              Totale: {totalPercentage}%
-                          </span>
-                      </div>
-                      {!isValidTotal && (
-                          <span className="text-xs text-red-500 font-medium">Devi raggiungere 100%</span>
-                      )}
-                  </div>
-              </div>
-          )}
-       </div>
-    </PageTransition>
-  )
-}
+                        return (
+                            <div key={t.id} className="recurring-item bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 relative overflow-hidden group">
+                                <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${gradientFrom} ${gradientTo} rounded-full -mr-10 -mt-10 transition-transform group-hover:scale-150`}></div>
+                                
+                                <div className="flex justify-between items-start relative z-10">
+                                    <div className="flex items-start gap-4">
+                                        <div className={`w-12 h-12 rounded-2xl ${bgColor} flex items-center justify-center ${textColor} shrink-0`}>
+                                            {isIncome ? <ArrowDownLeft className="w-6 h-6" /> : <ArrowUpRight className="w-6 h-6" />}
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-lg dark:text-white">{t.description}</h3>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'} uppercase tracking-wide`}>
+                                                    {getFrequencyLabel(t.recurrenceFrequency)}
+                                                </span>
+                                                <span className="text-xs text-slate-500 dark:text-slate-400">
+                                                    Prossimo: {t.nextRecurringDate ? formatDate(t.nextRecurringDate) : 'N/D'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`text-xl font-bold ${textColor}`}>
+                                            {isIncome ? '+' : '-'} {formatCurrency(t.amount)}
+                                        </p>
+                                        <p className="text-xs text-slate-400 font-medium mt-1">{t.category}</p>
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+                                    <button 
+                                        onClick={() => onStopRecurrence(t.id)}
+                                        className="text-red-500 hover:text-white hover:bg-red-500 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 active:scale-95"
+                                    >
+                                        <Ban className="w-3 h-3" /> Interrompi
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+        </PageTransition>
+    );
+};
 
 // 6. Dashboard
 const Dashboard = ({ transactions, bills }: { transactions: Transaction[], bills: Bill[] }) => {
@@ -735,6 +666,7 @@ const Dashboard = ({ transactions, bills }: { transactions: Transaction[], bills
   const totalIncome = currentTransactions.filter(t => t.type === TransactionType.INCOME).reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = currentTransactions.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, t) => acc + t.amount, 0);
   const balance = totalIncome - totalExpense;
+  const isNegative = balance < 0;
 
   useEffect(() => {
     const obj = { val: 0 };
@@ -771,14 +703,21 @@ const Dashboard = ({ transactions, bills }: { transactions: Transaction[], bills
 
   return (
     <PageTransition className="space-y-6 pb-24">
-      {/* Header Card */}
-      <div className="relative rounded-[2rem] p-8 text-white shadow-2xl shadow-emerald-500/20 overflow-hidden transform transition-transform hover:scale-[1.01] duration-500">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-600 via-emerald-500 to-teal-400"></div>
+      {/* Header Card - Dynamic Color (Red if negative) */}
+      <div className={`relative rounded-[2rem] p-8 text-white shadow-2xl overflow-hidden transform transition-all hover:scale-[1.01] duration-500 ${
+          isNegative ? 'shadow-red-500/30' : 'shadow-emerald-500/20'
+      }`}>
+        <div className={`absolute inset-0 bg-gradient-to-br transition-colors duration-500 ${
+            isNegative 
+            ? 'from-red-600 via-red-500 to-orange-500' 
+            : 'from-emerald-600 via-emerald-500 to-teal-400'
+        }`}></div>
+        
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl mix-blend-overlay"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-emerald-900/20 rounded-full -ml-10 -mb-10 blur-2xl"></div>
+        <div className={`absolute bottom-0 left-0 w-48 h-48 rounded-full -ml-10 -mb-10 blur-2xl ${isNegative ? 'bg-red-900/30' : 'bg-emerald-900/20'}`}></div>
         
         <div className="relative z-10">
-          <p className="text-emerald-100 text-sm font-medium tracking-wider uppercase mb-1">Saldo Disponibile</p>
+          <p className={`${isNegative ? 'text-red-100' : 'text-emerald-100'} text-sm font-medium tracking-wider uppercase mb-1`}>Saldo Disponibile</p>
           <h1 ref={balanceRef} className="text-5xl font-bold tracking-tight mb-8">
             {formatCurrency(0)}
           </h1>
@@ -787,14 +726,14 @@ const Dashboard = ({ transactions, bills }: { transactions: Transaction[], bills
             <div className="bg-black/10 rounded-2xl p-4 flex-1 backdrop-blur-md border border-white/10 hover:bg-black/20 transition-colors">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-1.5 bg-white/20 rounded-full"><TrendingDown className="w-3 h-3 text-white" /></div>
-                <span className="text-xs text-emerald-100 font-medium uppercase">Entrate</span>
+                <span className={`text-xs font-medium uppercase ${isNegative ? 'text-red-100' : 'text-emerald-100'}`}>Entrate</span>
               </div>
               <p className="font-bold text-xl">{formatCurrency(totalIncome)}</p>
             </div>
             <div className="bg-black/10 rounded-2xl p-4 flex-1 backdrop-blur-md border border-white/10 hover:bg-black/20 transition-colors">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-1.5 bg-white/20 rounded-full"><TrendingUp className="w-3 h-3 text-white" /></div>
-                <span className="text-xs text-emerald-100 font-medium uppercase">Uscite</span>
+                <span className={`text-xs font-medium uppercase ${isNegative ? 'text-red-100' : 'text-emerald-100'}`}>Uscite</span>
               </div>
               <p className="font-bold text-xl">{formatCurrency(totalExpense)}</p>
             </div>
@@ -1319,7 +1258,7 @@ const AnalyticsView = ({ transactions }: { transactions: Transaction[] }) => {
 // --- Main App ---
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'add' | 'settings' | 'bills' | 'split' | 'pin-setup'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'analytics' | 'add' | 'settings' | 'bills' | 'recurring' | 'pin-setup'>('dashboard');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [pin, setPin] = useState<string | undefined>(undefined);
@@ -1352,12 +1291,11 @@ const App: React.FC = () => {
                 setIsLocked(true);
             }
 
-            // --- RECURRING TRANSACTIONS CHECK LOGIC ---
-            // Filter transactions that are recurring and due
+            // --- RECURRING TRANSACTIONS CHECK LOGIC (ENHANCED) ---
             const today = new Date();
             const todayStr = today.toISOString().split('T')[0];
 
-            // 1. Find parents that are recurring and have a nextRecurringDate <= today
+            // Filter transactions that are recurring and have a next date in the past
             const recurringDue = txs.filter(t => 
                 t.isRecurring && 
                 t.nextRecurringDate && 
@@ -1368,40 +1306,47 @@ const App: React.FC = () => {
                 const newTransactions: Transaction[] = [];
                 
                 for (const parent of recurringDue) {
-                     // Create new transaction based on parent
-                     const newDate = parent.nextRecurringDate!;
+                     // Start loop from the currently marked next date
+                     let nextDateStr = parent.nextRecurringDate!;
                      
-                     // Avoid duplicates: Simple check if we already have a transaction with same description and date
-                     const exists = txs.find(t => t.description === parent.description && t.date.startsWith(newDate.split('T')[0]));
-                     if(exists) continue; // Skip if somehow already exists
+                     // Loop until we catch up to today
+                     while (new Date(nextDateStr) <= today) {
+                        
+                        // Avoid duplicates: Check if we already have a transaction with same description and date
+                        const exists = txs.find(t => t.description === parent.description && t.date.startsWith(nextDateStr.split('T')[0]));
+                        if (!exists) {
+                            const newTx: Transaction = {
+                                id: '', // Will be generated
+                                amount: parent.amount,
+                                type: parent.type,
+                                category: parent.category,
+                                subcategory: parent.subcategory,
+                                description: parent.description,
+                                date: nextDateStr,
+                                isRecurring: false, // Child is not the recurring template
+                            };
 
-                     const newTx: Transaction = {
-                         id: '', // Will be generated
-                         amount: parent.amount,
-                         type: parent.type,
-                         category: parent.category,
-                         subcategory: parent.subcategory,
-                         description: parent.description,
-                         date: newDate,
-                         isRecurring: false, // Child is not the recurring template
-                     };
+                            const saved = await api.addTransaction(newTx);
+                            if (saved) newTransactions.push(saved);
+                        }
 
-                     const saved = await api.addTransaction(newTx);
-                     if (saved) newTransactions.push(saved);
-
-                     // Update Parent's Next Date
-                     if (parent.recurrenceFrequency) {
-                         const nextNextDate = calculateNextDate(newDate, parent.recurrenceFrequency);
-                         await api.updateTransactionNextDate(parent.id, nextNextDate);
+                        // Update Next Date for the next iteration of the loop
+                        if (parent.recurrenceFrequency) {
+                            nextDateStr = calculateNextDate(nextDateStr, parent.recurrenceFrequency);
+                        } else {
+                            break; // Safety break
+                        }
                      }
+                     
+                     // After filling all missed dates, update the PARENT with the final future date
+                     await api.updateTransactionNextDate(parent.id, nextDateStr);
                 }
 
                 if (newTransactions.length > 0) {
                     // Refresh data
                      const updatedTxs = await api.getTransactions();
                      setTransactions(updatedTxs);
-                     // Optional: notify user
-                     console.log(`Generated ${newTransactions.length} recurring transactions`);
+                     console.log(`Generated ${newTransactions.length} recurring transactions via backfill`);
                 }
             }
             // ------------------------------------------
@@ -1452,10 +1397,50 @@ const App: React.FC = () => {
     setTransactions(prev => [newTx, ...prev]); 
     setCurrentView('dashboard');
     
+    // Save Initial Transaction
     const saved = await api.addTransaction(newTx);
+    
     if(saved) {
         // Replace temp optimistic with real data
         setTransactions(prev => [saved, ...prev.filter(x => x !== newTx)]); 
+
+        // --- BACKFILL LOGIC FOR PAST RECURRING ---
+        // If the user entered a recurring transaction in the past, fill the gaps immediately
+        if (saved.isRecurring && saved.nextRecurringDate) {
+            const today = new Date();
+            let nextDateStr = saved.nextRecurringDate;
+            const createdChildren: Transaction[] = [];
+
+            // Loop while the next date is still in the past or today
+            while (new Date(nextDateStr) <= today) {
+                const childTx: Transaction = {
+                    ...saved,
+                    id: '', // New ID needed
+                    date: nextDateStr,
+                    isRecurring: false, // Children are not templates
+                    nextRecurringDate: undefined
+                };
+
+                const savedChild = await api.addTransaction(childTx);
+                if (savedChild) {
+                    createdChildren.push(savedChild);
+                }
+
+                // Move nextDate forward
+                if (saved.recurrenceFrequency) {
+                   nextDateStr = calculateNextDate(nextDateStr, saved.recurrenceFrequency);
+                } else {
+                    break;
+                }
+            }
+
+            // Update UI with generated children
+            if (createdChildren.length > 0) {
+                setTransactions(prev => [...createdChildren, ...prev]);
+                // Update the original parent's next date to the future
+                await api.updateTransactionNextDate(saved.id, nextDateStr);
+            }
+        }
     }
   };
 
@@ -1498,6 +1483,12 @@ const App: React.FC = () => {
       setPin(undefined);
   };
 
+  const handleStopRecurrence = async (id: string) => {
+      if(window.confirm("Vuoi davvero interrompere questa ricorrenza? Le transazioni passate rimarranno.")) {
+          await api.stopRecurrence(id);
+          setTransactions(transactions.map(t => t.id === id ? {...t, isRecurring: false, nextRecurringDate: undefined} : t));
+      }
+  }
 
   if (isLocked && pin) return <PinPad title="Bentornato" subTitle="Inserisci il PIN per accedere" onComplete={(input) => {
       if(input === pin) setIsLocked(false);
@@ -1536,8 +1527,8 @@ const App: React.FC = () => {
         return <TransactionForm onSave={handleAddTransaction} onCancel={() => setCurrentView('dashboard')} />;
       case 'bills':
         return <BillsView bills={bills} onAddBill={handleAddBill} onPayBill={handlePayBill} onDeleteBill={handleDeleteBill} />;
-      case 'split':
-        return <SplitView />;
+      case 'recurring':
+        return <RecurringView transactions={transactions} onStopRecurrence={handleStopRecurrence} />;
       case 'pin-setup':
         return (
           <PageTransition>
@@ -1671,7 +1662,7 @@ const App: React.FC = () => {
              <PlusCircle className="w-8 h-8 group-hover:rotate-90 transition-transform duration-300" />
           </button>
         </div>
-        <NavButton id="split" icon={Users} label="Divisione" />
+        <NavButton id="recurring" icon={Repeat} label="Ricorrenti" />
         <NavButton id="settings" icon={Settings} label="Menu" />
       </nav>
     </div>

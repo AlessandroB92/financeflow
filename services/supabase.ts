@@ -93,6 +93,14 @@ export const api = {
     await supabase.from('transactions').update({ next_recurring_date: nextDate }).eq('id', id);
   },
 
+  stopRecurrence: async (id: string): Promise<void> => {
+    if (!supabase) return;
+    await supabase.from('transactions').update({ 
+        is_recurring: false, 
+        next_recurring_date: null 
+    }).eq('id', id);
+  },
+
   // BILLS
   getBills: async (): Promise<Bill[]> => {
     if (!supabase) return [];
