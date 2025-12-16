@@ -10,10 +10,18 @@ export const RecurringView = ({ transactions, onStopRecurrence }: { transactions
     const containerRef = useRef<HTMLDivElement>(null);
 
     const recurringList = useMemo(() => {
-        return transactions.filter(t => {
+        // 1. Filtra per ricorrenza e tipo
+        const filtered = transactions.filter(t => {
             if (!t.isRecurring) return false;
             if (filter === 'ALL') return true;
             return t.type === filter;
+        });
+
+        // 2. Ordina per Data Prossima Ricorrenza (Ascendente: più vicina -> più lontana)
+        return filtered.sort((a, b) => {
+            const dateA = a.nextRecurringDate ? new Date(a.nextRecurringDate).getTime() : Number.MAX_SAFE_INTEGER;
+            const dateB = b.nextRecurringDate ? new Date(b.nextRecurringDate).getTime() : Number.MAX_SAFE_INTEGER;
+            return dateA - dateB;
         });
     }, [transactions, filter]);
 
@@ -21,7 +29,7 @@ export const RecurringView = ({ transactions, onStopRecurrence }: { transactions
         const ctx = gsap.context(() => {
             if(recurringList.length > 0) {
                 // Imposta lo stato iniziale (invisibile) prima del paint e anima verso visibile
-                // clearProps: "all" alla fine pulisce gli stili inline, lasciando l'elemento visibile (perché non ha più la classe opacity-0)
+                // clearProps: "all" alla fine pulisce gli stili inline, lasciando l'elemento visibile
                 gsap.fromTo(".recurring-item", 
                     { y: 20, opacity: 0 },
                     { y: 0, opacity: 1, stagger: 0.05, duration: 0.4, ease: "power2.out", clearProps: "all" }
