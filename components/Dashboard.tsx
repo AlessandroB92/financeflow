@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
-import { TrendingUp, TrendingDown, AlertCircle, BrainCircuit, ArrowUpRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, AlertCircle, BrainCircuit, ArrowUpRight, ChevronRight } from 'lucide-react';
 import gsap from 'gsap';
 import { PageTransition } from './PageTransition.tsx';
 import { Transaction, Bill, TransactionType } from '../types.ts';
@@ -48,7 +48,10 @@ export const Dashboard = ({ transactions, bills }: { transactions: Transaction[]
       return acc;
     }, {} as Record<string, number>);
 
-  const chartData = Object.keys(expensesByCategory).map(key => ({ name: key, value: expensesByCategory[key] }));
+  // Sort data by value descending for better visualization
+  const chartData = Object.keys(expensesByCategory)
+    .map(key => ({ name: key, value: expensesByCategory[key] }))
+    .sort((a, b) => b.value - a.value);
 
   const getGeminiAdvice = async () => {
     if (!hasKey) return;
@@ -136,35 +139,85 @@ export const Dashboard = ({ transactions, bills }: { transactions: Transaction[]
         </div>
       </div>
 
-      {/* Chart */}
+      {/* Enhanced Category Breakdown */}
       <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-700">
-        <h3 className="font-bold text-lg mb-4 dark:text-white">Spese per Categoria</h3>
-        <div className="h-64">
+        <h3 className="font-bold text-lg mb-6 dark:text-white">Ripartizione Spese</h3>
+        
         {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-                <Pie
-                data={chartData}
-                innerRadius={65}
-                outerRadius={85}
-                paddingAngle={5}
-                dataKey="value"
-                cornerRadius={5}
-                >
-                {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
-                ))}
-                </Pie>
-                <RechartsTooltip 
-                    formatter={(value: number) => formatCurrency(value)} 
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                />
-            </PieChart>
-            </ResponsiveContainer>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+            {/* Chart Column */}
+            <div className="h-64 relative">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    innerRadius={70}
+                    outerRadius={90}
+                    paddingAngle={4}
+                    dataKey="value"
+                    cornerRadius={6}
+                    stroke="none"
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip 
+                      formatter={(value: number) => formatCurrency(value)} 
+                      contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', padding: '12px' }}
+                      itemStyle={{ color: '#1e293b', fontWeight: 600 }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              {/* Center Label */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Totale</span>
+                <span className="text-2xl font-bold text-slate-800 dark:text-white">{formatCurrency(totalExpense)}</span>
+              </div>
+            </div>
+
+            {/* List Column */}
+            <div className="space-y-4 max-h-72 overflow-y-auto pr-2 no-scrollbar">
+               {chartData.map((item, index) => {
+                 const percentage = ((item.value / totalExpense) * 100).toFixed(1);
+                 return (
+                   <div key={item.name} className="group flex items-center gap-4 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                      {/* Color Indicator */}
+                      <div 
+                        className="w-3 h-10 rounded-full shrink-0" 
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      ></div>
+                      
+                      {/* Details */}
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">{item.name}</span>
+                          <span className="font-bold text-slate-900 dark:text-white text-sm">{formatCurrency(item.value)}</span>
+                        </div>
+                        
+                        <div className="flex justify-between items-center text-xs">
+                           <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mr-3">
+                              <div 
+                                className="h-full rounded-full" 
+                                style={{ width: `${percentage}%`, backgroundColor: COLORS[index % COLORS.length] }}
+                              ></div>
+                           </div>
+                           <span className="text-slate-400 font-medium w-10 text-right">{percentage}%</span>
+                        </div>
+                      </div>
+                   </div>
+                 );
+               })}
+            </div>
+          </div>
         ) : (
-            <div className="h-full flex items-center justify-center text-slate-400">Nessun dato disponibile</div>
+          <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-2 border-2 border-dashed border-slate-100 dark:border-slate-700 rounded-3xl">
+            <div className="w-12 h-12 bg-slate-50 dark:bg-slate-900 rounded-full flex items-center justify-center">
+               <TrendingUp className="w-6 h-6 text-slate-300" />
+            </div>
+            <p className="font-medium text-sm">Nessuna spesa registrata</p>
+          </div>
         )}
-        </div>
       </div>
     </PageTransition>
   );
