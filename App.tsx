@@ -1,1259 +1,22 @@
-import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip,
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, LineChart, Line
-} from 'recharts';
-import { 
-  LayoutDashboard, PlusCircle, BarChart3, Wallet, Settings, 
-  TrendingUp, TrendingDown, Receipt,
-  Menu, X, Search, Camera, Upload, Lock, Share2, LogOut, Bell,
-  Calendar, Users, Download, FileJson, CheckCircle, AlertCircle, BrainCircuit, Trash2, ArrowUpRight, Database, Pencil, Save, Filter, Globe, Zap, KeyRound, ShieldCheck, ShieldAlert, Percent, UserPlus, UserMinus, ArrowLeft,
-  MessageCircle, Send, Bot, Minimize2, Sparkles, Repeat, Clock, Ban, ArrowDownLeft
+  LayoutDashboard, PlusCircle, BarChart3, Settings, 
+  TrendingUp, TrendingDown, Bell,
+  Calendar, Database, ShieldCheck, Repeat
 } from 'lucide-react';
-import { Transaction, TransactionType, Category, Bill, EXPENSE_CATEGORIES, INCOME_CATEGORIES, MarketAnalysis, RecurrenceFrequency } from './types.ts';
-import * as GeminiService from './services/geminiService.ts';
-import { api, supabase } from './services/supabase.ts'; // Import DB
-import gsap from 'gsap';
-
-// --- Constants & Helpers ---
-const CURRENCY = '€';
-const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6', '#64748B'];
-
-const formatDate = (isoString: string) => {
-  if (!isoString) return '';
-  return new Date(isoString).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
-};
-
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
-};
-
-const getDaysUntil = (dateStr: string) => {
-  const diff = new Date(dateStr).getTime() - new Date().getTime();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
-};
-
-// Calculate next occurrence based on frequency
-const calculateNextDate = (currentDate: string, frequency: RecurrenceFrequency): string => {
-    const d = new Date(currentDate);
-    if (frequency === 'WEEKLY') d.setDate(d.getDate() + 7);
-    if (frequency === 'MONTHLY') d.setMonth(d.getMonth() + 1);
-    if (frequency === 'YEARLY') d.setFullYear(d.getFullYear() + 1);
-    return d.toISOString();
-};
-
-const getFrequencyLabel = (freq?: RecurrenceFrequency) => {
-    switch (freq) {
-        case 'WEEKLY': return 'Settimanale';
-        case 'MONTHLY': return 'Mensile';
-        case 'YEARLY': return 'Annuale';
-        default: return 'Periodico';
-    }
-}
-
-// --- Animations Helper ---
-const PageTransition = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => {
-  const compRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    const ctx = gsap.context(() => {
-      gsap.fromTo(compRef.current, 
-        { opacity: 0, y: 15, scale: 0.98 }, 
-        { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "power2.out" }
-      );
-    }, compRef);
-    return () => ctx.revert();
-  }, []);
-
-  return <div ref={compRef} className={`w-full ${className}`}>{children}</div>;
-};
-
-// --- Sub-Components ---
-
-// 0. Chat Assistant Widget
-const ChatWidget = ({ transactions, bills }: { transactions: Transaction[], bills: Bill[] }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<{role: 'user' | 'model', text: string}[]>([
-    { role: 'model', text: 'Ciao! Sono Fin, il tuo assistente finanziario. Come posso aiutarti oggi?' }
-  ]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [chatSession, setChatSession] = useState<any>(null);
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-
-  // Initialize Chat Session with context
-  useEffect(() => {
-    if (isOpen && !chatSession) {
-      const session = GeminiService.createFinancialChat(transactions, bills);
-      if (session) setChatSession(session);
-    }
-  }, [isOpen, transactions, bills]);
-
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Animation open/close
-  useLayoutEffect(() => {
-    if (isOpen) {
-      gsap.fromTo(chatContainerRef.current, 
-        { opacity: 0, y: 20, scale: 0.9 }, 
-        { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: "back.out(1.2)" }
-      );
-    }
-  }, [isOpen]);
-
-  const handleSend = async () => {
-    if (!input.trim() || !chatSession) return;
-    
-    const userMsg = input;
-    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
-    setInput('');
-    setIsLoading(true);
-
-    const responseText = await GeminiService.sendMessageToChat(chatSession, userMsg);
-    
-    setMessages(prev => [...prev, { role: 'model', text: responseText }]);
-    setIsLoading(false);
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-      if(e.key === 'Enter') handleSend();
-  }
-
-  // Formatting helper for bold text from markdown
-  const formatMessage = (text: string) => {
-    // Simple bold parser
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={i}>{part.slice(2, -2)}</strong>;
-      }
-      return part;
-    });
-  };
-
-  return (
-    <>
-      {/* Floating Button */}
-      <div className="fixed bottom-24 right-4 md:bottom-8 md:right-8 z-50">
-        <button 
-          onClick={() => setIsOpen(!isOpen)}
-          className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 hover:scale-110 ${isOpen ? 'bg-slate-200 text-slate-800 rotate-90' : 'bg-indigo-600 text-white'}`}
-        >
-          {isOpen ? <X className="w-6 h-6" /> : <MessageCircle className="w-7 h-7" />}
-        </button>
-      </div>
-
-      {/* Chat Window */}
-      {isOpen && (
-        <div ref={chatContainerRef} className="fixed bottom-40 right-4 md:bottom-24 md:right-8 w-[90vw] md:w-[380px] h-[500px] glass-panel bg-white/95 dark:bg-slate-900/95 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 z-40 flex flex-col overflow-hidden">
-           {/* Header */}
-           <div className="p-4 bg-indigo-600 flex items-center justify-between text-white">
-              <div className="flex items-center gap-2">
-                 <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-                    <Sparkles className="w-5 h-5 text-yellow-300" />
-                 </div>
-                 <div>
-                    <h3 className="font-bold text-sm">Fin Assistant</h3>
-                    <p className="text-[10px] text-indigo-200 flex items-center gap-1">
-                       <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span> Online
-                    </p>
-                 </div>
-              </div>
-              <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-white/10 rounded-full transition-colors">
-                 <Minimize2 className="w-5 h-5" />
-              </button>
-           </div>
-
-           {/* Messages */}
-           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 dark:bg-slate-900/50">
-              {messages.map((m, i) => (
-                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed ${
-                      m.role === 'user' 
-                        ? 'bg-indigo-600 text-white rounded-br-none shadow-md' 
-                        : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-none shadow-sm border border-slate-100 dark:border-slate-700'
-                    }`}>
-                       {formatMessage(m.text)}
-                    </div>
-                 </div>
-              ))}
-              {isLoading && (
-                 <div className="flex justify-start">
-                    <div className="bg-white dark:bg-slate-800 p-3 rounded-2xl rounded-bl-none shadow-sm border border-slate-100 dark:border-slate-700">
-                       <div className="flex gap-1">
-                          <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></span>
-                          <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce delay-100"></span>
-                          <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce delay-200"></span>
-                       </div>
-                    </div>
-                 </div>
-              )}
-              <div ref={messagesEndRef} />
-           </div>
-
-           {/* Input */}
-           <div className="p-3 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700">
-             {!GeminiService.hasApiKey() ? (
-                <div className="text-center text-xs text-red-500 py-2">API Key mancante in index.html</div>
-             ) : (
-                <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-full pr-2 focus-within:ring-2 ring-indigo-500/50 transition-all">
-                  <input 
-                    className="flex-1 bg-transparent border-none focus:outline-none px-3 py-2 text-sm dark:text-white placeholder-slate-400"
-                    placeholder="Chiedi a Fin..."
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyPress}
-                    disabled={isLoading}
-                  />
-                  <button 
-                    onClick={handleSend}
-                    disabled={!input.trim() || isLoading}
-                    className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-90"
-                  >
-                    <Send className="w-4 h-4 ml-0.5" />
-                  </button>
-                </div>
-             )}
-           </div>
-        </div>
-      )}
-    </>
-  );
-};
-
-
-// 1. PIN Lock Screen & Setup
-const PinPad = ({ title, subTitle, onComplete, onCancel, variant = 'fullscreen' }: { title: string, subTitle: string, onComplete: (pin: string) => void, onCancel?: () => void, variant?: 'fullscreen' | 'inline' }) => {
-  const [input, setInput] = useState('');
-  const [error, setError] = useState(false);
-  
-  const handleDigit = (d: number) => {
-    const next = input + d;
-    if (next.length <= 4) {
-      setInput(next);
-      gsap.fromTo(`#digit-${d}`, { scale: 0.9 }, { scale: 1, duration: 0.2, ease: "back.out(1.7)" });
-    }
-
-    if (next.length === 4) {
-      setTimeout(() => {
-        onComplete(next);
-        if (variant === 'inline') setInput(''); 
-      }, 300);
-    }
-  };
-
-  const handleClear = () => {
-      setInput('');
-  }
-
-  // Styles based on variant
-  const containerClass = variant === 'fullscreen' 
-    ? "fixed inset-0 bg-slate-900 text-white z-[100] flex flex-col items-center justify-center p-4" 
-    : "w-full flex flex-col items-center justify-center py-8";
-    
-  const cardClass = variant === 'fullscreen'
-    ? "flex flex-col items-center w-full max-w-sm"
-    : "bg-white dark:bg-slate-800 w-full max-w-[340px] rounded-[2.5rem] p-8 shadow-2xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700 relative";
-
-  return (
-    <div className={containerClass}>
-      
-      <div className={cardClass}>
-        
-        {onCancel && (
-            <button onClick={onCancel} className={`absolute p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-slate-800 dark:hover:text-white ${variant === 'fullscreen' ? 'top-6 right-6 fixed' : 'top-4 left-4'}`}>
-                {variant === 'inline' ? <ArrowLeft className="w-6 h-6" /> : <X className="w-6 h-6" />}
-            </button>
-        )}
-
-        <div className={`flex flex-col items-center animate-in fade-in zoom-in duration-500 mb-8 ${variant === 'inline' ? 'mt-4' : ''}`}>
-            <div className={`rounded-full flex items-center justify-center ring-4 ${variant === 'inline' ? 'w-16 h-16 mb-4 bg-emerald-100 dark:bg-emerald-500/20 ring-emerald-50 dark:ring-emerald-500/10' : 'w-24 h-24 mb-8 bg-emerald-500/20 ring-emerald-500/10'}`}>
-               <Lock className={`${variant === 'inline' ? 'w-8 h-8' : 'w-12 h-12'} text-emerald-600 dark:text-emerald-500`} />
-            </div>
-            <h2 className={`${variant === 'inline' ? 'text-2xl' : 'text-3xl'} font-bold tracking-tight text-slate-900 dark:text-white text-center`}>{title}</h2>
-            <p className="text-slate-500 dark:text-slate-400 mt-2 text-center text-sm">{subTitle}</p>
-        </div>
-        
-        <div className="flex gap-4 justify-center h-4 mb-10">
-            {[0, 1, 2, 3].map((i) => (
-            <div key={i} className={`w-3 h-3 rounded-full transition-all duration-300 ${input.length > i ? 'bg-emerald-500 scale-125 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-slate-200 dark:bg-slate-700'} ${error ? 'bg-red-500' : ''}`} />
-            ))}
-        </div>
-
-        <div className={`grid grid-cols-3 w-full mx-auto gap-x-6 gap-y-4 ${variant === 'inline' ? 'max-w-[260px]' : 'max-w-[280px]'}`}>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-            <button
-                key={num}
-                id={`digit-${num}`}
-                onClick={() => handleDigit(num)}
-                className={`rounded-full flex items-center justify-center font-medium transition-all active:scale-95 ${
-                    variant === 'inline'
-                    ? 'w-16 h-16 text-2xl bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 shadow-sm' 
-                    : 'w-16 h-16 text-2xl glass-panel bg-white/5 hover:bg-white/10 text-white border-white/5'
-                }`}
-            >
-                {num}
-            </button>
-            ))}
-            <div />
-            <button
-            id="digit-0"
-            onClick={() => handleDigit(0)}
-            className={`rounded-full flex items-center justify-center font-medium transition-all active:scale-95 ${
-                variant === 'inline'
-                ? 'w-16 h-16 text-2xl bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 shadow-sm' 
-                : 'w-16 h-16 text-2xl glass-panel bg-white/5 hover:bg-white/10 text-white border-white/5'
-            }`}
-            >
-            0
-            </button>
-            <button
-            onClick={handleClear}
-            className={`rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors w-16 h-16`}
-            >
-            <Trash2 className="w-7 h-7" />
-            </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// 2. Receipt Scanner Modal
-const ReceiptScanner = ({ onClose, onScanComplete }: { onClose: () => void, onScanComplete: (data: Partial<Transaction>) => void }) => {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const modalRef = useRef(null);
-
-  useLayoutEffect(() => {
-    gsap.fromTo(modalRef.current, { y: 100, opacity: 0 }, { y: 0, opacity: 1, duration: 0.3, ease: "power2.out" });
-  }, []);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!GeminiService.hasApiKey()) {
-        alert("API Key mancante. Configurala in index.html");
-        return;
-    }
-
-    setIsAnalyzing(true);
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64String = (reader.result as string).split(',')[1];
-      const data = await GeminiService.analyzeReceipt(base64String);
-      setIsAnalyzing(false);
-      if (data) {
-        onScanComplete({ ...data, receiptImage: reader.result as string });
-      } else {
-        alert("Impossibile leggere lo scontrino. Riprova.");
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div ref={modalRef} className="bg-white dark:bg-slate-800 rounded-3xl w-full max-w-md p-6 relative shadow-2xl overflow-hidden">
-        <div className="absolute -top-20 -right-20 w-40 h-40 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
-
-        <button onClick={onClose} className="absolute top-4 right-4 p-2 bg-slate-100 dark:bg-slate-700 rounded-full text-slate-500 hover:text-slate-800 transition-colors z-10">
-          <X className="w-5 h-5" />
-        </button>
-        
-        <h3 className="text-xl font-bold mb-6 dark:text-white flex items-center gap-2">
-          <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl text-emerald-600">
-            <Camera className="w-6 h-6" /> 
-          </div>
-          Scan Scontrino (AI)
-        </h3>
-
-        {!GeminiService.hasApiKey() ? (
-            <div className="p-4 bg-red-50 text-red-600 rounded-xl border border-red-100 text-sm">
-                <p className="font-bold mb-1">Configurazione Richiesta</p>
-                Per usare lo scanner AI, inserisci la tua API Key di Gemini nel file <code>index.html</code>.
-            </div>
-        ) : isAnalyzing ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <div className="relative w-16 h-16 mb-6">
-               <div className="absolute inset-0 rounded-full border-4 border-slate-100 dark:border-slate-700"></div>
-               <div className="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
-            </div>
-            <p className="text-slate-600 dark:text-slate-300 font-medium animate-pulse">Gemini sta leggendo lo scontrino...</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-             <div 
-               onClick={() => fileInputRef.current?.click()}
-               className="group border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 transition-all duration-300"
-             >
-                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                   <Upload className="w-8 h-8 text-slate-400 group-hover:text-emerald-500 transition-colors" />
-                </div>
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-200 text-center">Tocca per caricare o scattare</p>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileChange} 
-                  accept="image/*" 
-                  className="hidden" 
-                />
-             </div>
-             <p className="text-xs text-slate-400 text-center px-4">
-               L'intelligenza artificiale estrarrà automaticamente importo, data, categoria e dettagli.
-             </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// 3. Bills View
-const BillsView = ({ bills, onAddBill, onPayBill, onDeleteBill }: { bills: Bill[], onAddBill: (b: Bill) => void, onPayBill: (id: string) => void, onDeleteBill: (id: string) => void }) => {
-  const [showForm, setShowForm] = useState(false);
-  const [newBill, setNewBill] = useState<Partial<Bill>>({
-     name: '', amount: 0, dueDate: '', category: Category.HOUSING
-  });
-  
-  const formRef = useRef(null);
-
-  useEffect(() => {
-    if (showForm) {
-      gsap.fromTo(formRef.current, { height: 0, opacity: 0 }, { height: 'auto', opacity: 1, duration: 0.3, ease: "power2.out" });
-    }
-  }, [showForm]);
-
-  useEffect(() => {
-    gsap.from(".bill-item", { x: -20, opacity: 0, stagger: 0.05, duration: 0.3 });
-  }, [bills]);
-
-  const handleSubmit = () => {
-    if(!newBill.name || !newBill.amount || !newBill.dueDate) return;
-    onAddBill({
-      id: 'temp', // Sarà sovrascritto dal DB
-      name: newBill.name,
-      amount: newBill.amount,
-      dueDate: newBill.dueDate,
-      category: newBill.category as Category,
-      isPaid: false
-    });
-    setShowForm(false);
-    setNewBill({ name: '', amount: 0, dueDate: '', category: Category.HOUSING });
-  };
-
-  const sortedBills = [...bills].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-
-  return (
-    <PageTransition className="pb-24 space-y-6">
-       <div className="flex justify-between items-center px-2">
-         <h2 className="text-2xl font-bold dark:text-white">Bollette & Scadenze</h2>
-         <button onClick={() => setShowForm(!showForm)} className="text-white bg-emerald-600 w-10 h-10 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 hover:scale-105 transition-transform">
-           <PlusCircle className={`w-6 h-6 transition-transform duration-300 ${showForm ? 'rotate-45' : ''}`} />
-         </button>
-       </div>
-
-       {showForm && (
-         <div ref={formRef} className="glass-panel overflow-hidden bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm space-y-3">
-            <h3 className="font-bold dark:text-white text-sm uppercase tracking-wider text-slate-500">Nuova Scadenza</h3>
-            <input 
-              placeholder="Nome (es. Luce, Affitto)" 
-              className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 dark:text-white border-none focus:ring-2 focus:ring-emerald-500"
-              value={newBill.name}
-              onChange={e => setNewBill({...newBill, name: e.target.value})}
-            />
-            <div className="flex gap-2">
-               <input 
-                type="number" 
-                placeholder="Importo" 
-                className="w-1/2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 dark:text-white border-none focus:ring-2 focus:ring-emerald-500"
-                value={newBill.amount || ''}
-                onChange={e => setNewBill({...newBill, amount: parseFloat(e.target.value)})}
-               />
-               <input 
-                type="date" 
-                className="w-1/2 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 dark:text-white border-none focus:ring-2 focus:ring-emerald-500"
-                value={newBill.dueDate}
-                onChange={e => setNewBill({...newBill, dueDate: e.target.value})}
-               />
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={handleSubmit} className="bg-emerald-600 text-white px-6 py-2 rounded-xl font-medium shadow-lg shadow-emerald-500/20 active:scale-95 transition-all w-full">Salva</button>
-            </div>
-         </div>
-       )}
-
-       <div className="space-y-3">
-         {sortedBills.map(bill => {
-           const daysLeft = getDaysUntil(bill.dueDate);
-           const isUrgent = daysLeft >= 0 && daysLeft <= 3 && !bill.isPaid;
-           const isLate = daysLeft < 0 && !bill.isPaid;
-
-           return (
-             <div key={bill.id} className={`bill-item relative bg-white dark:bg-slate-800 p-4 rounded-2xl flex items-center justify-between shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden`}>
-                {isUrgent && <div className="absolute top-0 left-0 w-1 h-full bg-orange-500"></div>}
-                {isLate && <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>}
-                
-                <div className="pl-3">
-                   <h3 className={`font-bold text-lg ${bill.isPaid ? 'text-emerald-600 dark:text-emerald-400 line-through decoration-2 opacity-50' : 'dark:text-white'}`}>{bill.name}</h3>
-                   <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-                     <span>{formatDate(bill.dueDate)}</span>
-                     {!bill.isPaid && (
-                       <span className={`px-2 py-0.5 rounded-md ${isLate ? 'bg-red-100 text-red-600' : isUrgent ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 dark:bg-slate-700'}`}>
-                         {isLate ? 'Scaduta' : isUrgent ? 'In scadenza' : `${daysLeft} giorni`}
-                       </span>
-                     )}
-                   </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`font-bold text-lg ${bill.isPaid ? 'opacity-50' : ''} dark:text-white`}>{formatCurrency(bill.amount)}</span>
-                  {bill.isPaid ? (
-                    <button onClick={() => onDeleteBill(bill.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  ) : (
-                    <button onClick={() => onPayBill(bill.id)} className="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-full hover:bg-emerald-500 hover:text-white transition-all active:scale-90">
-                      <CheckCircle className="w-6 h-6" />
-                    </button>
-                  )}
-                </div>
-             </div>
-           );
-         })}
-         {bills.length === 0 && (
-           <div className="text-center py-16 opacity-50 flex flex-col items-center">
-              <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                <Calendar className="w-8 h-8 text-slate-400" />
-              </div>
-              <p className="text-slate-400">Nessuna bolletta trovata.</p>
-           </div>
-          )}
-       </div>
-    </PageTransition>
-  );
-}
-
-// 4. Recurring View
-const RecurringView = ({ transactions, onStopRecurrence }: { transactions: Transaction[], onStopRecurrence: (id: string) => void }) => {
-    const [filter, setFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
-
-    // Filter active recurring transactions (Templates) and apply type filter
-    const recurringList = useMemo(() => {
-        return transactions.filter(t => {
-            if (!t.isRecurring) return false;
-            if (filter === 'ALL') return true;
-            return t.type === filter;
-        });
-    }, [transactions, filter]);
-
-    useEffect(() => {
-        if(recurringList.length > 0) {
-            gsap.from(".recurring-item", { y: 20, opacity: 0, stagger: 0.1, duration: 0.4 });
-        }
-    }, [recurringList, filter]);
-
-    return (
-        <PageTransition className="pb-24 space-y-6">
-            <div className="flex flex-col gap-4 px-2">
-                <div className="flex justify-between items-center">
-                    <h2 className="text-2xl font-bold dark:text-white">Operazioni Ricorrenti</h2>
-                    <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                        <Repeat className="w-6 h-6" />
-                    </div>
-                </div>
-
-                <div className="flex p-1 bg-slate-100 dark:bg-slate-900 rounded-xl">
-                    {(['ALL', 'INCOME', 'EXPENSE'] as const).map(t => (
-                        <button
-                            key={t}
-                            onClick={() => setFilter(t)}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${filter === t ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-400'}`}
-                        >
-                            {t === 'ALL' ? 'Tutte' : t === 'INCOME' ? 'Entrate' : 'Uscite'}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            <div className="space-y-4">
-                {recurringList.length === 0 ? (
-                    <div className="glass-panel bg-white dark:bg-slate-800 p-8 rounded-3xl flex flex-col items-center justify-center text-center space-y-4 shadow-lg border border-slate-100 dark:border-slate-700 min-h-[300px]">
-                        <div className="w-20 h-20 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center">
-                            <Repeat className="w-10 h-10 text-slate-400" />
-                        </div>
-                        <h3 className="text-lg font-bold dark:text-white">
-                            {filter === 'ALL' ? 'Nessuna operazione ricorrente' : filter === 'INCOME' ? 'Nessuna entrata ricorrente' : 'Nessuna uscita ricorrente'}
-                        </h3>
-                        <p className="text-slate-500 dark:text-slate-400 max-w-xs text-sm">
-                            Non hai ancora impostato operazioni automatiche per questa categoria.
-                        </p>
-                    </div>
-                ) : (
-                    recurringList.map(t => {
-                        const isIncome = t.type === TransactionType.INCOME;
-                        const themeColor = isIncome ? 'emerald' : 'red';
-                        const bgColor = isIncome ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-red-50 dark:bg-red-900/20';
-                        const textColor = isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
-                        const gradientFrom = isIncome ? 'from-emerald-500/10' : 'from-red-500/10';
-                        const gradientTo = isIncome ? 'to-teal-500/10' : 'to-orange-500/10';
-
-                        return (
-                            <div key={t.id} className="recurring-item bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 relative overflow-hidden group">
-                                <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${gradientFrom} ${gradientTo} rounded-full -mr-10 -mt-10 transition-transform group-hover:scale-150`}></div>
-                                
-                                <div className="flex justify-between items-start relative z-10">
-                                    <div className="flex items-start gap-4">
-                                        <div className={`w-12 h-12 rounded-2xl ${bgColor} flex items-center justify-center ${textColor} shrink-0`}>
-                                            {isIncome ? <ArrowDownLeft className="w-6 h-6" /> : <ArrowUpRight className="w-6 h-6" />}
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-lg dark:text-white">{t.description}</h3>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'} uppercase tracking-wide`}>
-                                                    {getFrequencyLabel(t.recurrenceFrequency)}
-                                                </span>
-                                                <span className="text-xs text-slate-500 dark:text-slate-400">
-                                                    Prossimo: {t.nextRecurringDate ? formatDate(t.nextRecurringDate) : 'N/D'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className={`text-xl font-bold ${textColor}`}>
-                                            {isIncome ? '+' : '-'} {formatCurrency(t.amount)}
-                                        </p>
-                                        <p className="text-xs text-slate-400 font-medium mt-1">{t.category}</p>
-                                    </div>
-                                </div>
-
-                                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
-                                    <button 
-                                        onClick={() => onStopRecurrence(t.id)}
-                                        className="text-red-500 hover:text-white hover:bg-red-500 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 active:scale-95"
-                                    >
-                                        <Ban className="w-3 h-3" /> Interrompi
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })
-                )}
-            </div>
-        </PageTransition>
-    );
-};
-
-// 6. Dashboard
-const Dashboard = ({ transactions, bills }: { transactions: Transaction[], bills: Bill[] }) => {
-  const [advice, setAdvice] = useState<string | null>(null);
-  const [loadingAdvice, setLoadingAdvice] = useState(false);
-  const balanceRef = useRef<HTMLHeadingElement>(null);
-  const hasKey = GeminiService.hasApiKey();
-
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-
-  const currentTransactions = useMemo(() => {
-    return transactions.filter(t => new Date(t.date) <= today);
-  }, [transactions]);
-
-  const totalIncome = currentTransactions.filter(t => t.type === TransactionType.INCOME).reduce((acc, t) => acc + t.amount, 0);
-  const totalExpense = currentTransactions.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, t) => acc + t.amount, 0);
-  const balance = totalIncome - totalExpense;
-  const isNegative = balance < 0;
-
-  useEffect(() => {
-    const obj = { val: 0 };
-    gsap.to(obj, {
-      val: balance,
-      duration: 1.5,
-      ease: "power3.out",
-      onUpdate: () => {
-        if (balanceRef.current) {
-          balanceRef.current.innerText = formatCurrency(obj.val);
-        }
-      }
-    });
-  }, [balance]);
-
-  const unpaidBills = bills.filter(b => !b.isPaid && getDaysUntil(b.dueDate) <= 5).length;
-
-  const expensesByCategory = currentTransactions
-    .filter(t => t.type === TransactionType.EXPENSE)
-    .reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + t.amount;
-      return acc;
-    }, {} as Record<string, number>);
-
-  const chartData = Object.keys(expensesByCategory).map(key => ({ name: key, value: expensesByCategory[key] }));
-
-  const getGeminiAdvice = async () => {
-    if (!hasKey) return;
-    setLoadingAdvice(true);
-    const text = await GeminiService.getFinancialAdvice(currentTransactions);
-    setAdvice(text);
-    setLoadingAdvice(false);
-  };
-
-  return (
-    <PageTransition className="space-y-6 pb-24">
-      {/* Header Card - Dynamic Color (Red if negative) */}
-      <div className={`relative rounded-[2rem] p-8 text-white shadow-2xl overflow-hidden transform transition-all hover:scale-[1.01] duration-500 ${
-          isNegative ? 'shadow-red-500/30' : 'shadow-emerald-500/20'
-      }`}>
-        <div className={`absolute inset-0 bg-gradient-to-br transition-colors duration-500 ${
-            isNegative 
-            ? 'from-red-600 via-red-500 to-orange-500' 
-            : 'from-emerald-600 via-emerald-500 to-teal-400'
-        }`}></div>
-        
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl mix-blend-overlay"></div>
-        <div className={`absolute bottom-0 left-0 w-48 h-48 rounded-full -ml-10 -mb-10 blur-2xl ${isNegative ? 'bg-red-900/30' : 'bg-emerald-900/20'}`}></div>
-        
-        <div className="relative z-10">
-          <p className={`${isNegative ? 'text-red-100' : 'text-emerald-100'} text-sm font-medium tracking-wider uppercase mb-1`}>Saldo Disponibile</p>
-          <h1 ref={balanceRef} className="text-5xl font-bold tracking-tight mb-8">
-            {formatCurrency(0)}
-          </h1>
-          
-          <div className="flex gap-4">
-            <div className="bg-black/10 rounded-2xl p-4 flex-1 backdrop-blur-md border border-white/10 hover:bg-black/20 transition-colors">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 bg-white/20 rounded-full"><TrendingDown className="w-3 h-3 text-white" /></div>
-                <span className={`text-xs font-medium uppercase ${isNegative ? 'text-red-100' : 'text-emerald-100'}`}>Entrate</span>
-              </div>
-              <p className="font-bold text-xl">{formatCurrency(totalIncome)}</p>
-            </div>
-            <div className="bg-black/10 rounded-2xl p-4 flex-1 backdrop-blur-md border border-white/10 hover:bg-black/20 transition-colors">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-1.5 bg-white/20 rounded-full"><TrendingUp className="w-3 h-3 text-white" /></div>
-                <span className={`text-xs font-medium uppercase ${isNegative ? 'text-red-100' : 'text-emerald-100'}`}>Uscite</span>
-              </div>
-              <p className="font-bold text-xl">{formatCurrency(totalExpense)}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {unpaidBills > 0 && (
-        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 p-5 rounded-2xl flex items-start gap-4 shadow-sm">
-          <div className="bg-orange-100 dark:bg-orange-800 p-2 rounded-xl">
-             <AlertCircle className="w-6 h-6 text-orange-500 dark:text-orange-300" />
-          </div>
-          <div>
-            <p className="font-bold text-orange-800 dark:text-orange-200 text-lg">Scadenze in arrivo</p>
-            <p className="text-sm text-orange-700 dark:text-orange-300 mt-1 leading-relaxed">Hai <span className="font-bold">{unpaidBills}</span> bollette da pagare nei prossimi 5 giorni.</p>
-          </div>
-        </div>
-      )}
-
-      {/* AI Widget */}
-      <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-lg shadow-indigo-500/5 border border-indigo-50 dark:border-slate-700 relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-indigo-500/10 transition-colors"></div>
-        <div className="relative z-10">
-            <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-2 text-lg">
-                <BrainCircuit className="w-6 h-6 text-indigo-500" /> Gemini Insights
-            </h3>
-            <button 
-                onClick={getGeminiAdvice}
-                disabled={loadingAdvice || !hasKey}
-                className="text-xs font-semibold bg-indigo-100 text-indigo-600 px-4 py-2 rounded-full hover:bg-indigo-200 transition-colors flex items-center gap-1 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                {loadingAdvice ? 'Analizzando...' : <>Genera Analisi <ArrowUpRight className="w-3 h-3" /></>}
-            </button>
-            </div>
-            <div className="bg-indigo-50/50 dark:bg-slate-900/50 rounded-xl p-4">
-                <p className="text-sm text-indigo-900 dark:text-indigo-100 leading-relaxed whitespace-pre-line font-medium">
-                {!hasKey 
-                  ? "⚠️ API Key mancante. Configurala in index.html per attivare l'AI." 
-                  : advice || "Tocca 'Genera Analisi' per ricevere consigli basati sulle tue spese recenti dall'AI."}
-                </p>
-            </div>
-        </div>
-      </div>
-
-      {/* Chart */}
-      <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-700">
-        <h3 className="font-bold text-lg mb-4 dark:text-white">Spese per Categoria</h3>
-        <div className="h-64">
-        {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-                <Pie
-                data={chartData}
-                innerRadius={65}
-                outerRadius={85}
-                paddingAngle={5}
-                dataKey="value"
-                cornerRadius={5}
-                >
-                {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
-                ))}
-                </Pie>
-                <RechartsTooltip 
-                    formatter={(value: number) => formatCurrency(value)} 
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                />
-            </PieChart>
-            </ResponsiveContainer>
-        ) : (
-            <div className="h-full flex items-center justify-center text-slate-400">Nessun dato disponibile</div>
-        )}
-        </div>
-      </div>
-    </PageTransition>
-  );
-};
-
-// 7. Transaction Form
-const TransactionForm = ({ onSave, onCancel }: { onSave: (t: Partial<Transaction>) => void, onCancel: () => void }) => {
-  const [formData, setFormData] = useState<Partial<Transaction>>({
-    type: TransactionType.EXPENSE,
-    date: new Date().toISOString().split('T')[0],
-    amount: 0,
-    category: Category.FOOD,
-    description: '',
-    subcategory: '',
-    isRecurring: false,
-    recurrenceFrequency: 'MONTHLY'
-  });
-  const [showScanner, setShowScanner] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  // Determine which categories to show based on transaction type
-  const availableCategories = formData.type === TransactionType.INCOME 
-      ? INCOME_CATEGORIES 
-      : EXPENSE_CATEGORIES;
-
-  // Reset category when switching types if the current category isn't valid for the new type
-  useEffect(() => {
-      if (!availableCategories.includes(formData.category as any)) {
-          setFormData(prev => ({ ...prev, category: availableCategories[0] }));
-      }
-  }, [formData.type, availableCategories]);
-
-  const handleScan = (data: Partial<Transaction>) => {
-    setFormData(prev => ({
-      ...prev,
-      amount: data.amount,
-      date: data.date || prev.date,
-      description: data.description,
-      category: data.category || prev.category,
-      receiptImage: data.receiptImage
-    }));
-    setShowScanner(false);
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-       if(formData.description && formData.description.length > 3 && !formData.receiptImage) {
-           const predicted = await GeminiService.predictCategory(formData.description);
-           // Validate predicted category exists in current list
-           if(predicted && availableCategories.includes(predicted as any)) {
-               setFormData(prev => ({...prev, category: predicted}));
-           }
-       }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [formData.description, availableCategories]);
-
-  const handleSave = async () => {
-    setLoading(true);
-    // If recurring, calculate the NEXT occurrence date right away so we know when to trigger it next time
-    let nextDate = undefined;
-    if (formData.isRecurring && formData.recurrenceFrequency && formData.date) {
-        nextDate = calculateNextDate(formData.date, formData.recurrenceFrequency);
-    }
-    
-    await onSave({ ...formData, nextRecurringDate: nextDate });
-    setLoading(false);
-  }
-
-  return (
-    <PageTransition className="pb-24">
-      <div className="flex justify-between items-center mb-8 px-2">
-         <h2 className="text-2xl font-bold dark:text-white">Nuova Transazione</h2>
-         <button onClick={() => setShowScanner(true)} className="bg-slate-900 text-white dark:bg-slate-700 px-4 py-2 rounded-full flex items-center gap-2 text-sm font-medium shadow-lg active:scale-95 transition-transform">
-            <Camera className="w-4 h-4" /> Scan
-         </button>
-      </div>
-
-      <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] shadow-xl shadow-slate-200/50 dark:shadow-none space-y-6 border border-slate-100 dark:border-slate-700">
-        
-        <div className="grid grid-cols-2 gap-4 bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl">
-          <button 
-            type="button"
-            onClick={() => setFormData({ ...formData, type: TransactionType.EXPENSE })}
-            className={`p-3 rounded-xl font-bold text-sm transition-all duration-300 ${formData.type === TransactionType.EXPENSE ? 'bg-white dark:bg-slate-700 text-red-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            Spesa
-          </button>
-          <button 
-            type="button"
-            onClick={() => setFormData({ ...formData, type: TransactionType.INCOME })}
-            className={`p-3 rounded-xl font-bold text-sm transition-all duration-300 ${formData.type === TransactionType.INCOME ? 'bg-white dark:bg-slate-700 text-emerald-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            Entrata
-          </button>
-        </div>
-
-        <div>
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Importo</label>
-          <div className="relative group">
-             <span className="absolute left-4 top-4 text-slate-400 font-bold text-xl group-focus-within:text-emerald-500 transition-colors">€</span>
-             <input 
-              type="number"
-              value={formData.amount || ''}
-              onChange={(e) => setFormData({...formData, amount: parseFloat(e.target.value)})}
-              className="w-full pl-10 p-4 bg-slate-50 dark:bg-slate-900/50 dark:text-white rounded-2xl text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-              placeholder="0.00"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Descrizione</label>
-          <input 
-            type="text"
-            value={formData.description}
-            onChange={(e) => setFormData({...formData, description: e.target.value})}
-            className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 dark:text-white rounded-2xl font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-            placeholder="Es. Spesa Carrefour"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Categoria</label>
-              <div className="relative">
-                <select 
-                    value={formData.category}
-                    onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 dark:text-white rounded-2xl font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 appearance-none"
-                >
-                    {availableCategories.map(c => (
-                        <option key={c} value={c}>{c}</option>
-                    ))}
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                    <TrendingDown className="w-4 h-4" />
-                </div>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Sottocategoria</label>
-               <input 
-                type="text"
-                value={formData.subcategory || ''}
-                onChange={(e) => setFormData({...formData, subcategory: e.target.value})}
-                className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 dark:text-white rounded-2xl font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                placeholder="Opzionale"
-              />
-            </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Data</label>
-              <input 
-                type="date"
-                value={formData.date}
-                onChange={(e) => setFormData({...formData, date: e.target.value})}
-                className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 dark:text-white rounded-2xl font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-            <div className="flex flex-col justify-center gap-2 pt-2">
-                <div className="flex items-center px-2">
-                    <input 
-                    type="checkbox" 
-                    id="recurring" 
-                    checked={formData.isRecurring}
-                    onChange={e => setFormData({...formData, isRecurring: e.target.checked})}
-                    className="w-6 h-6 accent-emerald-500 rounded-md cursor-pointer"
-                    />
-                    <label htmlFor="recurring" className="ml-3 text-sm text-slate-600 dark:text-slate-300 font-medium cursor-pointer select-none">Ricorrente</label>
-                </div>
-                {formData.isRecurring && (
-                    <div className="animate-in slide-in-from-top-2 fade-in pl-2">
-                        <select 
-                            value={formData.recurrenceFrequency}
-                            onChange={(e) => setFormData({...formData, recurrenceFrequency: e.target.value as RecurrenceFrequency})}
-                            className="w-full p-2 bg-slate-100 dark:bg-slate-900 dark:text-white rounded-lg text-sm border-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                            <option value="WEEKLY">Ogni Settimana</option>
-                            <option value="MONTHLY">Ogni Mese</option>
-                            <option value="YEARLY">Ogni Anno</option>
-                        </select>
-                    </div>
-                )}
-            </div>
-        </div>
-
-        {formData.receiptImage && (
-          <div className="mt-2 relative rounded-2xl overflow-hidden group">
-             <p className="text-xs text-slate-500 mb-2 absolute top-2 left-2 bg-white/80 px-2 py-1 rounded backdrop-blur">Scontrino allegato</p>
-             <img src={formData.receiptImage} alt="Receipt" className="w-full h-40 object-cover" />
-             <button 
-               onClick={() => setFormData({...formData, receiptImage: undefined})}
-               className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition-colors shadow-lg"
-             >
-               <X className="w-4 h-4" />
-             </button>
-          </div>
-        )}
-
-        <div className="pt-6 flex gap-4">
-          <button 
-            onClick={onCancel}
-            disabled={loading}
-            className="flex-1 p-4 rounded-2xl font-bold text-slate-500 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
-          >
-            Annulla
-          </button>
-          <button 
-            onClick={handleSave}
-            disabled={loading}
-            className="flex-1 p-4 rounded-2xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xl shadow-emerald-500/30 active:scale-95 transition-all disabled:opacity-50"
-          >
-            {loading ? 'Salvataggio...' : 'Salva'}
-          </button>
-        </div>
-      </div>
-
-      {showScanner && (
-        <ReceiptScanner onClose={() => setShowScanner(false)} onScanComplete={handleScan} />
-      )}
-    </PageTransition>
-  );
-};
-
-// 8. Analytics & History View (Replaced old HistoryView)
-const AnalyticsView = ({ transactions }: { transactions: Transaction[] }) => {
-    const [range, setRange] = useState<'1M' | '3M' | '6M' | '1Y' | 'ALL'>('1M');
-    const [typeFilter, setTypeFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
-    const [customStart, setCustomStart] = useState<string>('');
-    const [customEnd, setCustomEnd] = useState<string>('');
-    const [showCustomDates, setShowCustomDates] = useState(false);
-
-    // Calculate Date Range
-    const { startDate, endDate } = useMemo(() => {
-        const end = new Date();
-        const start = new Date();
-        
-        if (showCustomDates && customStart && customEnd) {
-            return { startDate: new Date(customStart), endDate: new Date(customEnd) };
-        }
-
-        switch(range) {
-            case '1M': start.setMonth(end.getMonth() - 1); break;
-            case '3M': start.setMonth(end.getMonth() - 3); break;
-            case '6M': start.setMonth(end.getMonth() - 6); break;
-            case '1Y': start.setFullYear(end.getFullYear() - 1); break;
-            case 'ALL': start.setFullYear(2000); break; // Far past
-        }
-        start.setHours(0,0,0,0);
-        end.setHours(23,59,59,999);
-        return { startDate: start, endDate: end };
-    }, [range, customStart, customEnd, showCustomDates]);
-
-    // Filter Transactions
-    const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => {
-            const d = new Date(t.date);
-            const inDate = d >= startDate && d <= endDate;
-            const inType = typeFilter === 'ALL' 
-                ? true 
-                : typeFilter === 'INCOME' 
-                    ? t.type === TransactionType.INCOME 
-                    : t.type === TransactionType.EXPENSE;
-            return inDate && inType;
-        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [transactions, startDate, endDate, typeFilter]);
-
-    // Prepare Chart Data
-    const chartData = useMemo(() => {
-        const dayMap = new Map<string, number>();
-        const ascTransactions = [...filteredTransactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        
-        let runningBalance = 0; 
-        
-        ascTransactions.forEach(t => {
-            const dateKey = t.date.split('T')[0];
-            const amount = t.amount;
-            
-            if (typeFilter === 'ALL') {
-                runningBalance += (t.type === TransactionType.INCOME ? amount : -amount);
-                dayMap.set(dateKey, runningBalance);
-            } else {
-                const current = dayMap.get(dateKey) || 0;
-                dayMap.set(dateKey, current + amount);
-            }
-        });
-
-        return Array.from(dayMap.entries()).map(([date, value]) => ({
-            date: new Date(date).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }),
-            fullDate: date,
-            value
-        }));
-    }, [filteredTransactions, typeFilter]);
-
-    const totalIncome = filteredTransactions.filter(t => t.type === TransactionType.INCOME).reduce((acc, t) => acc + t.amount, 0);
-    const totalExpense = filteredTransactions.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, t) => acc + t.amount, 0);
-    const net = totalIncome - totalExpense;
-
-    return (
-        <PageTransition className="pb-24 space-y-6">
-            <div className="flex justify-between items-center px-2">
-                <h2 className="text-2xl font-bold dark:text-white">Analisi e Trend</h2>
-                <button 
-                  onClick={() => setShowCustomDates(!showCustomDates)}
-                  className={`p-2 rounded-full transition-colors ${showCustomDates ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'}`}
-                >
-                    <Calendar className="w-5 h-5" />
-                </button>
-            </div>
-
-            {/* Controls */}
-            <div className="bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 space-y-4">
-                {showCustomDates && (
-                    <div className="flex gap-2 mb-4 animate-in fade-in slide-in-from-top-2">
-                        <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="w-full p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 dark:text-white" />
-                        <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="w-full p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 dark:text-white" />
-                    </div>
-                )}
-                
-                <div className="flex justify-between items-center overflow-x-auto no-scrollbar gap-2">
-                    {(['1M', '3M', '6M', '1Y', 'ALL'] as const).map(r => (
-                        <button 
-                            key={r}
-                            onClick={() => { setRange(r); setShowCustomDates(false); }}
-                            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${range === r && !showCustomDates ? 'bg-slate-800 text-white dark:bg-white dark:text-slate-900 shadow-lg' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}
-                        >
-                            {r}
-                        </button>
-                    ))}
-                </div>
-
-                <div className="flex p-1 bg-slate-100 dark:bg-slate-900 rounded-xl">
-                    {(['ALL', 'INCOME', 'EXPENSE'] as const).map(t => (
-                        <button
-                            key={t}
-                            onClick={() => setTypeFilter(t)}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${typeFilter === t ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-400'}`}
-                        >
-                            {t === 'ALL' ? 'Saldo' : t === 'INCOME' ? 'Entrate' : 'Uscite'}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Summary Cards */}
-            <div className={`grid gap-3 ${typeFilter === 'ALL' ? 'grid-cols-3' : 'grid-cols-1'}`}>
-                 {(typeFilter === 'ALL' || typeFilter === 'INCOME') && (
-                     <div className="bg-emerald-50 dark:bg-emerald-900/20 p-3 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
-                         <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider mb-1">Entrate</p>
-                         <p className="font-bold text-emerald-700 dark:text-emerald-300 text-sm md:text-base">{formatCurrency(totalIncome)}</p>
-                     </div>
-                 )}
-                 {(typeFilter === 'ALL' || typeFilter === 'EXPENSE') && (
-                     <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-2xl border border-red-100 dark:border-red-800/30">
-                         <p className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase tracking-wider mb-1">Uscite</p>
-                         <p className="font-bold text-red-700 dark:text-red-300 text-sm md:text-base">{formatCurrency(totalExpense)}</p>
-                     </div>
-                 )}
-                 {typeFilter === 'ALL' && (
-                     <div className={`p-3 rounded-2xl border ${net >= 0 ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800/30' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-100 dark:border-orange-800/30'}`}>
-                         <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${net >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-orange-600 dark:text-orange-400'}`}>Netto</p>
-                         <p className={`font-bold text-sm md:text-base ${net >= 0 ? 'text-blue-700 dark:text-blue-300' : 'text-orange-700 dark:text-orange-300'}`}>{formatCurrency(net)}</p>
-                     </div>
-                 )}
-            </div>
-
-            {/* Chart */}
-            <div className="h-64 bg-white dark:bg-slate-800 rounded-3xl p-4 shadow-sm border border-slate-100 dark:border-slate-700 relative">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 absolute top-4 left-6">
-                    {typeFilter === 'ALL' ? 'Andamento Saldo' : typeFilter === 'INCOME' ? 'Trend Entrate' : 'Trend Uscite'}
-                </h3>
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 30, right: 0, left: -20, bottom: 0 }}>
-                        <defs>
-                            <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor={typeFilter === 'EXPENSE' ? '#EF4444' : '#10B981'} stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor={typeFilter === 'EXPENSE' ? '#EF4444' : '#10B981'} stopOpacity={0}/>
-                            </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" opacity={0.5} />
-                        <XAxis 
-                            dataKey="date" 
-                            axisLine={false} 
-                            tickLine={false} 
-                            tick={{fontSize: 10, fill: '#94A3B8'}} 
-                            interval="preserveStartEnd"
-                        />
-                        <YAxis 
-                            axisLine={false} 
-                            tickLine={false} 
-                            tick={{fontSize: 10, fill: '#94A3B8'}} 
-                        />
-                        <RechartsTooltip 
-                             contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                             formatter={(value: number) => [formatCurrency(value), typeFilter === 'ALL' ? 'Saldo' : 'Importo']}
-                        />
-                        <Area 
-                            type="monotone" 
-                            dataKey="value" 
-                            stroke={typeFilter === 'EXPENSE' ? '#EF4444' : '#10B981'} 
-                            strokeWidth={3}
-                            fillOpacity={1} 
-                            fill="url(#colorValue)" 
-                        />
-                    </AreaChart>
-                </ResponsiveContainer>
-                {chartData.length === 0 && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-3xl">
-                        <p className="text-slate-400 text-sm">Nessun dato nel periodo</p>
-                    </div>
-                )}
-            </div>
-
-            {/* List */}
-            <div className="space-y-3">
-                <h3 className="text-lg font-bold dark:text-white px-2">Dettaglio Movimenti</h3>
-                {filteredTransactions.map((t) => (
-                <div key={t.id} className="history-item bg-white dark:bg-slate-800 p-4 rounded-2xl flex items-center justify-between shadow-sm border border-slate-50 dark:border-slate-700">
-                    <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${t.type === TransactionType.INCOME ? 'bg-emerald-100 text-emerald-600' : 'bg-red-50 text-red-500'}`}>
-                        {t.type === TransactionType.INCOME ? <TrendingDown className="w-5 h-5 rotate-180" /> : <TrendingUp className="w-5 h-5" />}
-                    </div>
-                    <div>
-                        <p className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
-                        {t.description}
-                         {t.isRecurring && <Repeat className="w-3 h-3 text-slate-400" />}
-                        </p>
-                        <div className="flex items-center gap-2 text-[10px] font-medium text-slate-500">
-                        <span>{formatDate(t.date)}</span>
-                        <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                        <span>{t.category}</span>
-                        </div>
-                    </div>
-                    </div>
-                    <p className={`font-bold ${t.type === TransactionType.INCOME ? 'text-emerald-600' : 'text-slate-800 dark:text-slate-200'}`}>
-                    {t.type === TransactionType.INCOME ? '+' : ''}{formatCurrency(t.amount)}
-                    </p>
-                </div>
-                ))}
-            </div>
-        </PageTransition>
-    );
-};
+import { Transaction, TransactionType, Category, Bill } from './types.ts';
+import { api, supabase } from './services/supabase.ts';
+import { calculateNextDate, getDaysUntil } from './utils/helpers.ts';
+
+// Component Imports
+import { PageTransition } from './components/PageTransition.tsx';
+import { ChatWidget } from './components/ChatWidget.tsx';
+import { PinPad } from './components/PinPad.tsx';
+import { Dashboard } from './components/Dashboard.tsx';
+import { TransactionForm } from './components/TransactionForm.tsx';
+import { BillsView } from './components/BillsView.tsx';
+import { RecurringView } from './components/RecurringView.tsx';
+import { AnalyticsView } from './components/AnalyticsView.tsx';
 
 // --- Main App ---
 
@@ -1291,11 +54,8 @@ const App: React.FC = () => {
                 setIsLocked(true);
             }
 
-            // --- RECURRING TRANSACTIONS CHECK LOGIC (ENHANCED) ---
+            // --- RECURRING TRANSACTIONS CHECK LOGIC ---
             const today = new Date();
-            const todayStr = today.toISOString().split('T')[0];
-
-            // Filter transactions that are recurring and have a next date in the past
             const recurringDue = txs.filter(t => 
                 t.isRecurring && 
                 t.nextRecurringDate && 
@@ -1306,51 +66,42 @@ const App: React.FC = () => {
                 const newTransactions: Transaction[] = [];
                 
                 for (const parent of recurringDue) {
-                     // Start loop from the currently marked next date
                      let nextDateStr = parent.nextRecurringDate!;
                      
-                     // Loop until we catch up to today
                      while (new Date(nextDateStr) <= today) {
-                        
-                        // Avoid duplicates: Check if we already have a transaction with same description and date
                         const exists = txs.find(t => t.description === parent.description && t.date.startsWith(nextDateStr.split('T')[0]));
                         if (!exists) {
                             const newTx: Transaction = {
-                                id: '', // Will be generated
+                                id: '', 
                                 amount: parent.amount,
                                 type: parent.type,
                                 category: parent.category,
                                 subcategory: parent.subcategory,
                                 description: parent.description,
                                 date: nextDateStr,
-                                isRecurring: false, // Child is not the recurring template
+                                isRecurring: false, 
                             };
 
                             const saved = await api.addTransaction(newTx);
                             if (saved) newTransactions.push(saved);
                         }
 
-                        // Update Next Date for the next iteration of the loop
                         if (parent.recurrenceFrequency) {
                             nextDateStr = calculateNextDate(nextDateStr, parent.recurrenceFrequency);
                         } else {
-                            break; // Safety break
+                            break;
                         }
                      }
                      
-                     // After filling all missed dates, update the PARENT with the final future date
                      await api.updateTransactionNextDate(parent.id, nextDateStr);
                 }
 
                 if (newTransactions.length > 0) {
-                    // Refresh data
                      const updatedTxs = await api.getTransactions();
                      setTransactions(updatedTxs);
                      console.log(`Generated ${newTransactions.length} recurring transactions via backfill`);
                 }
             }
-            // ------------------------------------------
-
         } catch (e) {
             console.error("DB Error", e);
         } finally {
@@ -1359,7 +110,6 @@ const App: React.FC = () => {
     };
     loadData();
 
-    // LocalStorage for Theme Only
     const stored = localStorage.getItem('financeflow_theme');
     if (stored) {
         const data = JSON.parse(stored);
@@ -1367,12 +117,10 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Save Theme Locally
   useEffect(() => {
     localStorage.setItem('financeflow_theme', JSON.stringify({ darkMode: isDarkMode }));
   }, [isDarkMode]);
 
-  // Dark Mode
   useEffect(() => {
     if (isDarkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
@@ -1380,7 +128,7 @@ const App: React.FC = () => {
 
   const handleAddTransaction = async (t: Partial<Transaction>) => {
     const newTx: Transaction = {
-      id: '', // DB genererà UUID
+      id: '',
       amount: t.amount || 0,
       type: t.type || TransactionType.EXPENSE,
       category: t.category || Category.OTHER,
@@ -1393,31 +141,25 @@ const App: React.FC = () => {
       nextRecurringDate: t.nextRecurringDate
     };
     
-    // Optimistic Update
     setTransactions(prev => [newTx, ...prev]); 
     setCurrentView('dashboard');
     
-    // Save Initial Transaction
     const saved = await api.addTransaction(newTx);
     
     if(saved) {
-        // Replace temp optimistic with real data
         setTransactions(prev => [saved, ...prev.filter(x => x !== newTx)]); 
 
-        // --- BACKFILL LOGIC FOR PAST RECURRING ---
-        // If the user entered a recurring transaction in the past, fill the gaps immediately
         if (saved.isRecurring && saved.nextRecurringDate) {
             const today = new Date();
             let nextDateStr = saved.nextRecurringDate;
             const createdChildren: Transaction[] = [];
 
-            // Loop while the next date is still in the past or today
             while (new Date(nextDateStr) <= today) {
                 const childTx: Transaction = {
                     ...saved,
-                    id: '', // New ID needed
+                    id: '', 
                     date: nextDateStr,
-                    isRecurring: false, // Children are not templates
+                    isRecurring: false, 
                     nextRecurringDate: undefined
                 };
 
@@ -1426,7 +168,6 @@ const App: React.FC = () => {
                     createdChildren.push(savedChild);
                 }
 
-                // Move nextDate forward
                 if (saved.recurrenceFrequency) {
                    nextDateStr = calculateNextDate(nextDateStr, saved.recurrenceFrequency);
                 } else {
@@ -1434,10 +175,8 @@ const App: React.FC = () => {
                 }
             }
 
-            // Update UI with generated children
             if (createdChildren.length > 0) {
                 setTransactions(prev => [...createdChildren, ...prev]);
-                // Update the original parent's next date to the future
                 await api.updateTransactionNextDate(saved.id, nextDateStr);
             }
         }
@@ -1453,7 +192,6 @@ const App: React.FC = () => {
     await api.updateBill(id, { isPaid: true });
     setBills(bills.map(b => b.id === id ? { ...b, isPaid: true } : b));
     
-    // Add Expense Transaction automatically
     const bill = bills.find(b => b.id === id);
     if(bill) {
       await handleAddTransaction({
@@ -1516,7 +254,6 @@ const App: React.FC = () => {
       );
   }
 
-  // --- Render View Logic ---
   const renderView = () => {
     switch (currentView) {
       case 'dashboard':
@@ -1546,7 +283,6 @@ const App: React.FC = () => {
           <PageTransition className="pb-24 space-y-4">
              <h2 className="text-2xl font-bold dark:text-white mb-6 px-2">Impostazioni</h2>
              
-             {/* Security Card */}
              <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-lg shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -mr-10 -mt-10"></div>
                 <div className="flex items-start justify-between relative z-10 mb-6">
@@ -1588,7 +324,6 @@ const App: React.FC = () => {
                 </div>
              </div>
 
-             {/* Appearance Card */}
              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl flex items-center justify-between shadow-sm border border-slate-100 dark:border-slate-700">
                 <div className="flex items-center gap-4">
                   <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-xl">
@@ -1646,7 +381,6 @@ const App: React.FC = () => {
         {renderView()}
       </div>
 
-      {/* Floating Chat Assistant */}
       {!isLocked && isDbConfigured && (
         <ChatWidget transactions={transactions} bills={bills} />
       )}
