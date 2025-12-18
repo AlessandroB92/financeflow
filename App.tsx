@@ -55,21 +55,28 @@ const App: React.FC = () => {
             }
 
             // --- RECURRING TRANSACTIONS CHECK LOGIC ---
-            const today = new Date();
+            const todayStr = new Date().toISOString().split('T')[0];
+            const todayDate = new Date(todayStr);
+
+            // Filtra ricorrenze che hanno una data valida e sono <= oggi
             const recurringDue = txs.filter(t => 
                 t.isRecurring && 
                 t.nextRecurringDate && 
-                new Date(t.nextRecurringDate) <= today
+                t.nextRecurringDate <= todayStr
             );
 
             if (recurringDue.length > 0) {
                 const newTransactions: Transaction[] = [];
                 
                 for (const parent of recurringDue) {
+                     // nextRecurringDate è già YYYY-MM-DD grazie al fix in helpers
                      let nextDateStr = parent.nextRecurringDate!;
                      
-                     while (new Date(nextDateStr) <= today) {
-                        const exists = txs.find(t => t.description === parent.description && t.date.startsWith(nextDateStr.split('T')[0]));
+                     // Genera transazioni finché la data è nel passato o oggi
+                     while (nextDateStr <= todayStr) {
+                        // Verifica duplicati usando la data stringa esatta
+                        const exists = txs.find(t => t.description === parent.description && t.date === nextDateStr);
+                        
                         if (!exists) {
                             const newTx: Transaction = {
                                 id: '', 
@@ -127,18 +134,21 @@ const App: React.FC = () => {
   }, [isDarkMode]);
 
   const handleAddTransaction = async (t: Partial<Transaction>) => {
+    // Normalizza la data a YYYY-MM-DD se non presente
+    const dateToSave = t.date || new Date().toISOString().split('T')[0];
+
     const newTx: Transaction = {
       id: '',
       amount: t.amount || 0,
       type: t.type || TransactionType.EXPENSE,
       category: t.category || Category.OTHER,
       subcategory: t.subcategory,
-      date: t.date || new Date().toISOString(),
+      date: dateToSave,
       description: t.description || 'Nuova transazione',
       receiptImage: t.receiptImage,
       isRecurring: t.isRecurring,
       recurrenceFrequency: t.recurrenceFrequency,
-      nextRecurringDate: t.nextRecurringDate
+      nextRecurringDate: t.nextRecurringDate // Questo arriva già calcolato dal form o undefined
     };
     
     setTransactions(prev => [newTx, ...prev]); 
@@ -150,11 +160,12 @@ const App: React.FC = () => {
         setTransactions(prev => [saved, ...prev.filter(x => x !== newTx)]); 
 
         if (saved.isRecurring && saved.nextRecurringDate) {
-            const today = new Date();
-            let nextDateStr = saved.nextRecurringDate;
+            const todayStr = new Date().toISOString().split('T')[0];
+            let nextDateStr = saved.nextRecurringDate; // YYYY-MM-DD
             const createdChildren: Transaction[] = [];
 
-            while (new Date(nextDateStr) <= today) {
+            // Se l'utente ha impostato una ricorrenza retroattiva (data nel passato)
+            while (nextDateStr <= todayStr) {
                 const childTx: Transaction = {
                     ...saved,
                     id: '', 

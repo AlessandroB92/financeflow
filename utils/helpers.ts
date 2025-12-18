@@ -23,7 +23,8 @@ export const calculateNextDate = (currentDate: string, frequency: RecurrenceFreq
     if (frequency === 'WEEKLY') d.setDate(d.getDate() + 7);
     if (frequency === 'MONTHLY') d.setMonth(d.getMonth() + 1);
     if (frequency === 'YEARLY') d.setFullYear(d.getFullYear() + 1);
-    return d.toISOString();
+    // Restituisce solo YYYY-MM-DD per coerenza con il DB ed evitare problemi di timezone
+    return d.toISOString().split('T')[0];
 };
 
 export const getFrequencyLabel = (freq?: RecurrenceFrequency) => {
